@@ -1,6 +1,6 @@
 # Augment UI
 
-A modern Vue.js 3 frontend application for the [Augment](https://github.com/deptz/augment) API. Generate, manage, and optimize JIRA ticket descriptions with AI-powered assistance using multiple LLM providers.
+A Vue.js 3 frontend application for the [Augment](https://github.com/deptz/augment) API. Generate, manage, and optimize JIRA ticket with AI-powered assistance using multiple LLM providers to streamline project management workflows.
 
 **Augment UI** is the frontend/UI component of the Augment project, providing an intuitive interface for interacting with the Augment backend API.
 

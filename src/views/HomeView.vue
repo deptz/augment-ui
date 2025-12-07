@@ -5,7 +5,7 @@
         Augment
       </h1>
       <p class="text-lg text-gray-600">
-        Generate, manage, and optimize JIRA ticket descriptions with AI
+        Generate, manage, and optimize JIRA ticket with AI-powered assistance to streamline project management workflows
       </p>
     </div>
 

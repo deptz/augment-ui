@@ -1,0 +1,765 @@
+<template>
+  <div class="max-w-6xl mx-auto">
+    <div class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-900">PRD Story Sync (WIP)</h1>
+      <p class="mt-2 text-sm text-gray-600">
+        Sync story tickets from PRD documents to JIRA
+      </p>
+    </div>
+
+    <!-- Input Form -->
+    <div class="bg-white shadow-sm rounded-lg p-6 mb-6">
+      <div class="space-y-6">
+        <!-- Epic Key Input -->
+        <div>
+          <label for="epic-key" class="block text-sm font-medium text-gray-700">
+            Epic Key (Optional)
+          </label>
+          <input
+            id="epic-key"
+            v-model="epicKey"
+            type="text"
+            placeholder="e.g., EPIC-123"
+            class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            @keyup.enter="handleSync"
+          />
+          <p class="mt-1 text-xs text-gray-500">
+            If provided, PRD URL will be read from epic's PRD custom field
+          </p>
+        </div>
+
+        <!-- PRD URL Input -->
+        <div>
+          <label for="prd-url" class="block text-sm font-medium text-gray-700">
+            PRD URL (Optional)
+          </label>
+          <input
+            id="prd-url"
+            v-model="prdUrl"
+            type="text"
+            placeholder="https://example.atlassian.net/wiki/spaces/PROJ/pages/123456789/PRD"
+            class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            @keyup.enter="handleSync"
+          />
+          <p class="mt-1 text-xs text-gray-500">
+            Required if epic_key is not provided
+          </p>
+        </div>
+
+        <!-- Options -->
+        <div class="space-y-3">
+          <div class="flex items-center">
+            <input
+              id="dry-run"
+              v-model="dryRun"
+              type="checkbox"
+              class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+            />
+            <label for="dry-run" class="ml-2 block text-sm text-gray-900">
+              Preview mode (dry run) - No JIRA updates
+            </label>
+          </div>
+          <div class="flex items-center">
+            <input
+              id="async-mode"
+              v-model="asyncMode"
+              type="checkbox"
+              class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+            />
+            <label for="async-mode" class="ml-2 block text-sm text-gray-900">
+              Run in background (for long-running operations)
+            </label>
+          </div>
+        </div>
+
+        <!-- Existing Ticket Action -->
+        <div>
+          <label for="existing-ticket-action" class="block text-sm font-medium text-gray-700">
+            Existing Ticket Action
+          </label>
+          <select
+            id="existing-ticket-action"
+            v-model="existingTicketAction"
+            class="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
+          >
+            <option value="skip">Skip (don't create)</option>
+            <option value="update">Update existing</option>
+            <option value="error">Return error</option>
+          </select>
+          <p class="mt-1 text-xs text-gray-500">
+            Action to take when story ticket already exists
+          </p>
+        </div>
+
+        <!-- Sync Button -->
+        <div>
+          <button
+            @click="handleSync"
+            :disabled="(!epicKey && !prdUrl) || loading"
+            class="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            <LoadingSpinner v-if="loading" size="sm" color="white" class="mr-2" />
+            <span v-else>Sync Stories from PRD</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Job Status (when async mode) -->
+    <div v-if="jobId && !response" class="mb-6">
+      <JobStatusCard
+        :job="jobStatus"
+        :is-loading="isPolling"
+        @cancel="handleCancelJob"
+        @refresh="refreshJob"
+        @view-results="handleViewJobResults"
+      />
+    </div>
+
+    <!-- Results -->
+    <div v-if="response" class="space-y-6">
+      <!-- Summary Stats -->
+      <div v-if="response.summary_stats" class="bg-white shadow-sm rounded-lg p-6">
+        <h2 class="text-lg font-medium text-gray-900 mb-4">Summary</h2>
+        <div class="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div v-for="(value, key) in response.summary_stats" :key="key" class="text-center">
+            <div class="text-2xl font-bold text-indigo-600">{{ value }}</div>
+            <div class="text-xs text-gray-500 mt-1">{{ formatKey(key) }}</div>
+          </div>
+        </div>
+        <div class="mt-4 text-sm text-gray-600">
+          <p>Execution time: {{ response.execution_time_seconds.toFixed(2) }}s</p>
+          <p>Operation mode: {{ response.operation_mode }}</p>
+        </div>
+      </div>
+
+      <!-- Created Tickets -->
+      <div v-if="response.created_tickets && Object.keys(response.created_tickets).length > 0" class="bg-white shadow-sm rounded-lg p-6">
+        <h2 class="text-lg font-medium text-gray-900 mb-4">Created Tickets</h2>
+        <div v-for="(tickets, type) in response.created_tickets" :key="String(type)" class="mb-3">
+          <h3 class="text-sm font-medium text-gray-700 mb-2">{{ formatKey(String(type)) }}:</h3>
+          <div class="flex flex-wrap gap-2">
+            <span
+              v-for="ticket in tickets"
+              :key="ticket"
+              class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800"
+            >
+              {{ ticket }}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Story Details -->
+      <div v-if="stories.length > 0" class="bg-white shadow-sm rounded-lg p-6">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-lg font-medium text-gray-900">Story Details</h2>
+          <div class="flex items-center space-x-3">
+            <div class="text-sm text-gray-600">
+              <span class="font-medium">{{ stories.length }}</span> story/stories
+              <span v-if="response?.operation_mode === 'planning' || response?.operation_mode === 'dry_run'" class="ml-2 text-yellow-600">
+                ({{ response.operation_mode }} mode)
+              </span>
+            </div>
+            <button
+              @click="handleAddStory"
+              class="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            >
+              <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+              Add Story
+            </button>
+          </div>
+        </div>
+        <div class="space-y-4">
+          <div
+            v-for="(story, index) in stories"
+            :key="index"
+            class="border border-gray-200 rounded-lg p-4 hover:border-indigo-300 transition-colors"
+          >
+            <div class="flex justify-between items-start mb-3">
+              <div class="flex-1">
+                <h3 class="text-base font-medium text-gray-900">{{ story.summary }}</h3>
+              </div>
+              <div class="flex items-center space-x-2 ml-4">
+                <span
+                  v-if="story.jira_key"
+                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                >
+                  {{ story.jira_key }}
+                </span>
+                <button
+                  v-if="!story.jira_key"
+                  @click="handleCreateStory(index)"
+                  :disabled="loading || !epicKey"
+                  class="inline-flex items-center px-2.5 py-1 border border-transparent text-xs font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  title="Create in JIRA"
+                >
+                  <LoadingSpinner v-if="creatingStoryIndex === index" size="sm" color="white" class="mr-1" />
+                  <svg v-else class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                  </svg>
+                  Create
+                </button>
+                <button
+                  @click="handleEditStory(index)"
+                  class="text-indigo-600 hover:text-indigo-800"
+                  title="Edit story"
+                >
+                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                  </svg>
+                </button>
+                <button
+                  @click="handleRemoveStory(index)"
+                  class="text-red-600 hover:text-red-800"
+                  title="Remove story"
+                >
+                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="prose prose-sm max-w-none mb-4">
+              <p class="text-sm text-gray-700 whitespace-pre-wrap">{{ story.description }}</p>
+            </div>
+
+            <!-- Acceptance Criteria -->
+            <div v-if="story.acceptance_criteria && story.acceptance_criteria.length > 0" class="mb-4">
+              <h4 class="text-sm font-medium text-gray-700 mb-2">Acceptance Criteria</h4>
+              <ul class="list-disc list-inside space-y-1">
+                <li v-for="(criteria, idx) in story.acceptance_criteria" :key="idx" class="text-sm text-gray-600">
+                  {{ criteria }}
+                </li>
+              </ul>
+            </div>
+
+            <!-- Test Cases -->
+            <div v-if="story.test_cases && story.test_cases.length > 0" class="mb-4">
+              <h4 class="text-sm font-medium text-gray-700 mb-2">Test Cases</h4>
+              <div class="space-y-2">
+                <div
+                  v-for="(testCase, idx) in story.test_cases"
+                  :key="idx"
+                  class="border border-gray-200 rounded p-2"
+                >
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-sm font-medium text-gray-900">{{ testCase.title }}</span>
+                    <span class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                      {{ testCase.type }}
+                    </span>
+                  </div>
+                  <p class="text-xs text-gray-600">{{ testCase.description }}</p>
+                  <p class="text-xs text-gray-500 mt-1">Expected: {{ testCase.expected_result }}</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tasks -->
+            <div v-if="story.tasks && story.tasks.length > 0" class="mt-4">
+              <h4 class="text-sm font-medium text-gray-700 mb-2">Tasks</h4>
+              <div class="space-y-2">
+                <div
+                  v-for="(task, idx) in story.tasks"
+                  :key="idx"
+                  class="border-l-4 border-indigo-500 pl-3 py-1"
+                >
+                  <p class="text-sm font-medium text-gray-900">{{ task.summary }}</p>
+                  <p class="text-xs text-gray-600">{{ task.team }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Task Details (if separate from stories) -->
+      <div v-if="response.task_details && response.task_details.length > 0" class="bg-white shadow-sm rounded-lg p-6">
+        <h2 class="text-lg font-medium text-gray-900 mb-4">Task Details</h2>
+        <div class="space-y-4">
+          <div
+            v-for="(task, index) in response.task_details"
+            :key="index"
+            class="border border-gray-200 rounded-lg p-4"
+          >
+            <div class="flex justify-between items-start mb-2">
+              <h3 class="text-base font-medium text-gray-900">{{ task.summary }}</h3>
+              <span
+                v-if="task.jira_key"
+                class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+              >
+                {{ task.jira_key }}
+              </span>
+            </div>
+            <p v-if="task.description" class="text-sm text-gray-600 mb-2">{{ task.description }}</p>
+            <div class="grid grid-cols-2 gap-4 text-xs">
+              <div>
+                <span class="text-gray-500">Team:</span>
+                <span class="ml-1 text-gray-900">{{ task.team }}</span>
+              </div>
+              <div>
+                <span class="text-gray-500">Estimated Days:</span>
+                <span class="ml-1 text-gray-900">{{ task.estimated_days }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Errors -->
+      <div v-if="response.errors && response.errors.length > 0" class="bg-red-50 border border-red-200 rounded-lg p-4">
+        <h3 class="text-sm font-medium text-red-800 mb-2">Errors</h3>
+        <ul class="list-disc list-inside space-y-1">
+          <li v-for="(error, index) in response.errors" :key="index" class="text-sm text-red-700">
+            {{ error }}
+          </li>
+        </ul>
+      </div>
+
+      <!-- Warnings -->
+      <div v-if="response.warnings && response.warnings.length > 0" class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+        <h3 class="text-sm font-medium text-yellow-800 mb-2">Warnings</h3>
+        <ul class="list-disc list-inside space-y-1">
+          <li v-for="(warning, index) in response.warnings" :key="index" class="text-sm text-yellow-700">
+            {{ warning }}
+          </li>
+        </ul>
+      </div>
+
+      <!-- Prompt Viewer -->
+      <PromptViewer
+        :system-prompt="response.system_prompt || undefined"
+        :user-prompt="response.user_prompt || undefined"
+        :llm-provider="response.llm_provider || undefined"
+        :llm-model="response.llm_model || undefined"
+        @test-prompt="handleTestPrompt"
+      />
+    </div>
+
+    <!-- A/B Testing Modal -->
+    <PromptResubmitModal
+      v-if="showABTestModal"
+      operation-type="plan_tasks"
+      :original-request="{
+        epic_key: epicKey || null,
+        prd_url: prdUrl || null,
+        dry_run: dryRun,
+        async_mode: asyncMode,
+        existing_ticket_action: existingTicketAction,
+      }"
+      :original-system-prompt="response?.system_prompt || undefined"
+      :original-user-prompt="response?.user_prompt || ''"
+      :original-result="response"
+      @close="showABTestModal = false"
+      @result="handleABTestResult"
+    />
+
+    <!-- Story Edit Modal -->
+    <StoryEditModal
+      v-if="showEditModal"
+      :story="editingStoryIndex !== null ? stories[editingStoryIndex] : undefined"
+      :story-index="editingStoryIndex ?? undefined"
+      :default-epic-key="epicKey"
+      @close="handleCloseEdit"
+      @save="handleSaveStory"
+    />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, nextTick } from 'vue';
+import { useUIStore } from '../stores/ui';
+import { syncStoriesFromPRD, getJobStatus } from '../api/endpoints';
+import type { PRDStorySyncResponse, BatchResponse } from '../types/api';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
+import PromptViewer from '../components/PromptViewer.vue';
+import PromptResubmitModal from '../components/PromptResubmitModal.vue';
+import JobStatusCard from '../components/JobStatusCard.vue';
+import StoryEditModal from '../components/StoryEditModal.vue';
+import { useJobPolling } from '../composables/useJobPolling';
+import { createStoryTicket } from '../api/endpoints';
+import type { StoryDetail } from '../types/api';
+import { log, error as logError } from '../utils/logger';
+
+const uiStore = useUIStore();
+
+const epicKey = ref('');
+const prdUrl = ref('');
+const dryRun = ref(true);
+const asyncMode = ref(true);
+const existingTicketAction = ref<'skip' | 'update' | 'error'>('skip');
+const loading = ref(false);
+const response = ref<PRDStorySyncResponse | null>(null);
+const stories = ref<StoryDetail[]>([]);
+const showABTestModal = ref(false);
+const showEditModal = ref(false);
+const editingStoryIndex = ref<number | null>(null);
+const creatingStoryIndex = ref<number | null>(null);
+const jobId = ref<string | null>(null);
+
+// Job polling
+const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } = useJobPolling(
+  jobId,
+  {
+    onComplete: async (job) => {
+      if (job.results) {
+        // Ensure we're setting the response correctly
+        const results = job.results as PRDStorySyncResponse;
+        
+        // Log for debugging
+        log('Job completed, setting response:', {
+          success: results.success,
+          storyCount: results.story_details?.length || 0,
+          hasStoryDetails: !!results.story_details,
+        });
+        
+        // Set response and wait for Vue to update
+        response.value = results;
+        
+        // Initialize stories array from response
+        if (results.story_details && results.story_details.length > 0) {
+          stories.value = results.story_details.map(story => ({ ...story }));
+        }
+        
+        await nextTick();
+        
+        if (results.success) {
+          const storyCount = results.story_details?.length || 0;
+          uiStore.showSuccess(`Sync complete: ${storyCount} story/stories processed`);
+        } else {
+          // Even if not successful, show the stories if they exist
+          const storyCount = results.story_details?.length || 0;
+          if (storyCount > 0) {
+            uiStore.showInfo(`Processed ${storyCount} story/stories (no tickets created)`);
+          }
+        }
+        jobId.value = null;
+      }
+    },
+    onError: (error) => {
+      logError('Job polling error:', error);
+    },
+  }
+);
+
+async function handleSync() {
+  if (!epicKey.value && !prdUrl.value) {
+    uiStore.showError('Please provide either an Epic Key or PRD URL');
+    return;
+  }
+
+  loading.value = true;
+  response.value = null;
+  stories.value = [];
+
+  try {
+    const result = await syncStoriesFromPRD({
+      epic_key: epicKey.value || null,
+      prd_url: prdUrl.value || null,
+      dry_run: dryRun.value,
+      async_mode: asyncMode.value,
+      existing_ticket_action: existingTicketAction.value,
+    });
+
+    // Check if it's a BatchResponse (async mode)
+    if ('job_id' in result) {
+      const batchResponse = result as BatchResponse;
+      jobId.value = batchResponse.job_id;
+      uiStore.showInfo(`Job started: ${batchResponse.job_id}`);
+      startPolling();
+    } else if (result.success) {
+      // Synchronous response
+      response.value = result as PRDStorySyncResponse;
+      
+      // Initialize stories array from response
+      if (result.story_details && result.story_details.length > 0) {
+        stories.value = result.story_details.map(story => ({ ...story }));
+      }
+      
+      const storyCount = result.story_details?.length || 0;
+      uiStore.showSuccess(`Sync complete: ${storyCount} story/stories processed`);
+    } else {
+      uiStore.showError('Failed to sync stories from PRD');
+    }
+  } catch (error: any) {
+    uiStore.showError(error.response?.data?.detail || 'Failed to sync stories from PRD');
+    logError('Error syncing stories:', error);
+  } finally {
+    loading.value = false;
+  }
+}
+
+function handleTestPrompt() {
+  showABTestModal.value = true;
+}
+
+function handleABTestResult(result: any) {
+  uiStore.showInfo('A/B test completed');
+}
+
+function formatKey(key: string): string {
+  return key
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+async function handleCancelJob() {
+  if (jobId.value) {
+    await cancelJobPolling();
+    jobId.value = null;
+  }
+}
+
+async function refreshJob() {
+  if (jobId.value) {
+    try {
+      const job = await getJobStatus(jobId.value);
+      if (job.status === 'completed' && job.results) {
+        const results = job.results as PRDStorySyncResponse;
+        
+        // Log for debugging
+        log('Refreshing job, setting response:', {
+          success: results.success,
+          storyCount: results.story_details?.length || 0,
+          hasStoryDetails: !!results.story_details,
+        });
+        
+        response.value = results;
+        
+        // Initialize stories array from response
+        if (results.story_details && results.story_details.length > 0) {
+          stories.value = results.story_details.map(story => ({ ...story }));
+        }
+        
+        await nextTick();
+        
+        if (results.success) {
+          const storyCount = results.story_details?.length || 0;
+          uiStore.showSuccess(`Sync complete: ${storyCount} story/stories processed`);
+        } else {
+          // Even if not successful, show the stories if they exist
+          const storyCount = results.story_details?.length || 0;
+          if (storyCount > 0) {
+            uiStore.showInfo(`Processed ${storyCount} story/stories (no tickets created)`);
+          }
+        }
+        jobId.value = null;
+      }
+    } catch (error: any) {
+      uiStore.showError('Failed to refresh job status');
+    }
+  }
+}
+
+async function handleViewJobResults() {
+  if (jobStatus.value?.results) {
+    const results = jobStatus.value.results as PRDStorySyncResponse;
+    
+    // Log for debugging
+    log('Viewing job results:', {
+      success: results.success,
+      storyCount: results.story_details?.length || 0,
+      hasStoryDetails: !!results.story_details,
+    });
+    
+    response.value = results;
+    
+    // Initialize stories array from response
+    if (results.story_details && results.story_details.length > 0) {
+      stories.value = results.story_details.map(story => ({ ...story }));
+    }
+    
+    if (results.success) {
+      const storyCount = results.story_details?.length || 0;
+      uiStore.showSuccess(`Sync complete: ${storyCount} story/stories processed`);
+    } else {
+      // Even if not successful, show the stories if they exist
+      const storyCount = results.story_details?.length || 0;
+      if (storyCount > 0) {
+        uiStore.showInfo(`Processed ${storyCount} story/stories (no tickets created)`);
+      }
+    }
+    jobId.value = null;
+  }
+}
+
+function handleAddStory() {
+  if (!epicKey.value) {
+    uiStore.showError('Please enter epic key before adding stories');
+    return;
+  }
+  editingStoryIndex.value = null;
+  showEditModal.value = true;
+}
+
+function handleEditStory(index: number) {
+  editingStoryIndex.value = index;
+  showEditModal.value = true;
+}
+
+function handleCloseEdit() {
+  showEditModal.value = false;
+  editingStoryIndex.value = null;
+}
+
+function handleSaveStory(updatedStory: StoryDetail, index?: number) {
+  if (index !== undefined && index !== null) {
+    // Update existing story
+    stories.value[index] = updatedStory;
+    uiStore.showSuccess('Story updated successfully');
+  } else {
+    // Add new story
+    stories.value.push(updatedStory);
+    uiStore.showSuccess('Story added successfully');
+  }
+  handleCloseEdit();
+}
+
+function handleRemoveStory(index: number) {
+  if (confirm('Remove this story?')) {
+    stories.value.splice(index, 1);
+    uiStore.showSuccess('Story removed');
+  }
+}
+
+async function handleCreateStory(index: number) {
+  const story = stories.value[index];
+  
+  if (!story) {
+    uiStore.showError('Story not found');
+    return;
+  }
+
+  if (story.jira_key) {
+    uiStore.showInfo(`Story already created: ${story.jira_key}`);
+    return;
+  }
+
+  if (!epicKey.value) {
+    uiStore.showError('Epic key is required to create stories');
+    return;
+  }
+
+  creatingStoryIndex.value = index;
+
+  try {
+    // Use description as-is (acceptance criteria are already included in description per API spec)
+    const description = story.description || '';
+
+    // Format test cases if present
+    let testCasesText: string | undefined;
+    if (story.test_cases && story.test_cases.length > 0) {
+      testCasesText = story.test_cases.map((tc, idx) => {
+        return `${idx + 1}. ${tc.title}\n   Type: ${tc.type}\n   Description: ${tc.description}\n   Expected: ${tc.expected_result}`;
+      }).join('\n\n');
+    }
+
+    // Create the story ticket using the story-specific endpoint
+    const result = await createStoryTicket({
+      parent_key: epicKey.value,
+      summary: story.summary,
+      description: description,
+      test_cases: testCasesText,
+      create_ticket: true,
+    });
+
+    if (result.success && result.ticket_key) {
+      // Update the story with the created key
+      stories.value[index].jira_key = result.ticket_key;
+      uiStore.showSuccess(`Successfully created story: ${result.ticket_key}`);
+    } else {
+      uiStore.showError(`Failed to create story: ${result.error || result.message || 'Unknown error'}`);
+    }
+  } catch (error: any) {
+    const errorMsg = error.response?.data?.detail || error.message || 'Unknown error';
+    uiStore.showError(`Failed to create story: ${errorMsg}`);
+    logError('Error creating story:', error);
+  } finally {
+    creatingStoryIndex.value = null;
+  }
+}
+
+async function handleCreateAll() {
+  if (stories.value.length === 0) {
+    uiStore.showError('No stories to create');
+    return;
+  }
+
+  if (!epicKey.value) {
+    uiStore.showError('Epic key is required');
+    return;
+  }
+
+  loading.value = true;
+  const createdTickets: string[] = [];
+  const errors: string[] = [];
+
+  try {
+    // Create each story
+    for (const story of stories.value) {
+      // Skip if already created
+      if (story.jira_key) {
+        createdTickets.push(story.jira_key);
+        continue;
+      }
+
+      try {
+        // Use description as-is (acceptance criteria are already included in description per API spec)
+        const description = story.description || '';
+
+        // Format test cases if present
+        let testCasesText: string | undefined;
+        if (story.test_cases && story.test_cases.length > 0) {
+          testCasesText = story.test_cases.map((tc, idx) => {
+            return `${idx + 1}. ${tc.title}\n   Type: ${tc.type}\n   Description: ${tc.description}\n   Expected: ${tc.expected_result}`;
+          }).join('\n\n');
+        }
+
+        // Create the story ticket using the story-specific endpoint
+        const result = await createStoryTicket({
+          parent_key: epicKey.value,
+          summary: story.summary,
+          description: description,
+          test_cases: testCasesText,
+          create_ticket: true,
+        });
+
+        if (result.success && result.ticket_key) {
+          // Update the story with the created key
+          const storyIndex = stories.value.findIndex(s => s === story);
+          if (storyIndex !== -1) {
+            stories.value[storyIndex].jira_key = result.ticket_key;
+          }
+          createdTickets.push(result.ticket_key);
+        } else {
+          errors.push(`${story.summary}: ${result.error || result.message}`);
+        }
+      } catch (error: any) {
+        errors.push(`${story.summary}: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
+      }
+    }
+
+    // Show results
+    if (createdTickets.length > 0) {
+      uiStore.showSuccess(`Successfully created ${createdTickets.length} story/stories: ${createdTickets.join(', ')}`);
+    }
+    if (errors.length > 0) {
+      uiStore.showError(`Failed to create ${errors.length} story/stories.`);
+      logError('Creation errors:', errors);
+    }
+    if (createdTickets.length === 0 && errors.length === 0) {
+      uiStore.showError('No stories were created');
+    }
+  } catch (error: any) {
+    uiStore.showError(error.response?.data?.detail || 'Failed to create stories');
+    logError('Error creating stories:', error);
+  } finally {
+    loading.value = false;
+  }
+}
+</script>
+
+

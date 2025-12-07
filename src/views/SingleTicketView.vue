@@ -1,0 +1,391 @@
+<template>
+  <div class="max-w-5xl mx-auto">
+    <div class="mb-8">
+      <h1 class="text-3xl font-bold text-gray-900">Single Ticket Description Backfill</h1>
+      <p class="mt-2 text-sm text-gray-600">
+        Generate AI-powered descriptions for individual JIRA tickets. Review and edit before updating.
+      </p>
+    </div>
+
+    <!-- Input Form -->
+    <div class="bg-white shadow-sm rounded-lg p-6 mb-6">
+      <div class="space-y-6">
+        <!-- Ticket Key Input -->
+        <div>
+          <label for="ticket-key" class="block text-sm font-medium text-gray-700">
+            Ticket Key
+          </label>
+          <input
+            id="ticket-key"
+            v-model="ticketKey"
+            type="text"
+            placeholder="e.g., PROJ-123"
+            class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            @keyup.enter="handleGenerate"
+          />
+        </div>
+
+        <!-- Additional Context Input -->
+        <div>
+          <label for="additional-context" class="block text-sm font-medium text-gray-700">
+            Additional Context (Optional)
+          </label>
+          <textarea
+            id="additional-context"
+            v-model="additionalContext"
+            placeholder="Provide any additional context or instructions for generating the description..."
+            rows="4"
+            class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+          />
+          <p class="mt-1 text-xs text-gray-500">Optional: Add any extra context or specific requirements for the description generation</p>
+        </div>
+
+        <!-- Async Mode Option -->
+        <div class="flex items-center">
+          <input
+            id="async-mode"
+            v-model="asyncMode"
+            type="checkbox"
+            class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+          />
+          <label for="async-mode" class="ml-2 block text-sm text-gray-900">
+            Run in background (for long-running operations)
+          </label>
+        </div>
+
+        <!-- Generate Button -->
+        <div>
+          <button
+            @click="handleGenerate"
+            :disabled="!ticketKey || loading"
+            class="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            <LoadingSpinner v-if="loading" size="sm" color="white" class="mr-2" />
+            <span v-else>Generate Description</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Job Status (when async mode) -->
+    <div v-if="jobId && !response" class="mb-6">
+      <JobStatusCard
+        :job="jobStatus"
+        :is-loading="isPolling"
+        @cancel="handleCancelJob"
+        @refresh="refreshJob"
+        @view-results="handleViewJobResults"
+      />
+    </div>
+
+    <!-- Results -->
+    <div v-if="response" class="space-y-6">
+      <!-- Ticket Info -->
+      <div class="bg-white shadow-sm rounded-lg p-6">
+        <h2 class="text-lg font-medium text-gray-900 mb-4">Ticket Information</h2>
+        <dl class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
+          <div>
+            <dt class="text-sm font-medium text-gray-500">Ticket Key</dt>
+            <dd class="mt-1 text-sm text-gray-900">{{ response.ticket_key }}</dd>
+          </div>
+          <div>
+            <dt class="text-sm font-medium text-gray-500">Summary</dt>
+            <dd class="mt-1 text-sm text-gray-900">{{ response.summary }}</dd>
+          </div>
+          <div v-if="response.assignee_name">
+            <dt class="text-sm font-medium text-gray-500">Assignee</dt>
+            <dd class="mt-1 text-sm text-gray-900">{{ response.assignee_name }}</dd>
+          </div>
+          <div v-if="response.parent_name">
+            <dt class="text-sm font-medium text-gray-500">Parent/Epic</dt>
+            <dd class="mt-1 text-sm text-gray-900">{{ response.parent_name }}</dd>
+          </div>
+        </dl>
+      </div>
+
+      <!-- Generated Description -->
+      <div class="bg-white shadow-sm rounded-lg p-6">
+        <div class="flex justify-between items-center mb-4">
+          <h2 class="text-lg font-medium text-gray-900">Generated Description</h2>
+          <div class="flex space-x-2">
+            <button
+              v-if="!isEditing"
+              @click="isEditing = true"
+              class="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            >
+              <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              Edit
+            </button>
+            <button
+              v-else
+              @click="isEditing = false"
+              class="inline-flex items-center px-3 py-1 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+        
+        <textarea
+          v-model="editedDescription"
+          :readonly="!isEditing"
+          :class="{ 'bg-gray-50': !isEditing, 'bg-white': isEditing }"
+          class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm font-mono"
+          rows="15"
+        ></textarea>
+
+        <!-- Action Buttons -->
+        <div class="mt-4 flex space-x-3">
+          <button
+            @click="handlePreview"
+            :disabled="updating"
+            class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+          >
+            <LoadingSpinner v-if="previewing" size="sm" class="mr-2" />
+            <span v-else>Preview Update</span>
+          </button>
+          <button
+            @click="handleUpdate"
+            :disabled="updating || !previewData"
+            class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            <LoadingSpinner v-if="updating" size="sm" color="white" class="mr-2" />
+            <span v-else>Update JIRA</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Preview Data -->
+      <div v-if="previewData" class="bg-blue-50 border border-blue-200 rounded-lg p-6">
+        <h3 class="text-sm font-medium text-blue-900 mb-2">Preview</h3>
+        <p class="text-sm text-blue-700">{{ previewData.message }}</p>
+        <div v-if="previewData.preview" class="mt-4 text-xs text-blue-600">
+          <p>Changes will be applied to ticket: <strong>{{ previewData.ticket_key }}</strong></p>
+        </div>
+      </div>
+
+      <!-- Prompt Viewer -->
+      <PromptViewer
+        :system-prompt="response.system_prompt"
+        :user-prompt="response.user_prompt"
+        :llm-provider="response.llm_provider"
+        :llm-model="response.llm_model"
+        @test-prompt="handleTestPrompt"
+      />
+    </div>
+
+    <!-- A/B Testing Modal -->
+    <PromptResubmitModal
+      v-if="showABTestModal"
+      operation-type="generate_single"
+      :original-request="{ ticket_key: ticketKey }"
+      :original-system-prompt="response?.system_prompt"
+      :original-user-prompt="response?.user_prompt || ''"
+      :original-result="response"
+      @close="showABTestModal = false"
+      @result="handleABTestResult"
+    />
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed } from 'vue';
+import { useModelsStore } from '../stores/models';
+import { useUIStore } from '../stores/ui';
+import { generateSingle, updateJiraTicket } from '../api/endpoints';
+import type { TicketResponse, JiraUpdateResponse, BatchResponse } from '../types/api';
+import LoadingSpinner from '../components/LoadingSpinner.vue';
+import PromptViewer from '../components/PromptViewer.vue';
+import PromptResubmitModal from '../components/PromptResubmitModal.vue';
+import JobStatusCard from '../components/JobStatusCard.vue';
+import { useJobPolling } from '../composables/useJobPolling';
+import { getJobStatus } from '../api/endpoints';
+import { error } from '../utils/logger';
+
+const modelsStore = useModelsStore();
+const uiStore = useUIStore();
+
+const ticketKey = ref('');
+const additionalContext = ref('');
+const asyncMode = ref(true);
+const loading = ref(false);
+const previewing = ref(false);
+const updating = ref(false);
+const response = ref<TicketResponse | null>(null);
+const editedDescription = ref('');
+const isEditing = ref(false);
+const previewData = ref<JiraUpdateResponse | null>(null);
+const showABTestModal = ref(false);
+const jobId = ref<string | null>(null);
+
+// Job polling
+const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } = useJobPolling(
+  jobId,
+  {
+    onComplete: async (job) => {
+      // When job completes, fetch the results
+      if (job.results) {
+        // The results should contain the TicketResponse
+        response.value = job.results as TicketResponse;
+        if (response.value.generated_description) {
+          editedDescription.value = response.value.generated_description;
+        }
+        jobId.value = null; // Clear job ID to hide status card
+      }
+    },
+    onError: (error) => {
+      error('Job polling error:', error);
+    },
+  }
+);
+
+async function handleGenerate() {
+  if (!ticketKey.value) {
+    uiStore.showError('Please enter a ticket key');
+    return;
+  }
+
+  loading.value = true;
+  response.value = null;
+  previewData.value = null;
+  jobId.value = null;
+
+  try {
+    const result = await generateSingle({
+      ticket_key: ticketKey.value,
+      llm_provider: modelsStore.selectedProvider || undefined,
+      llm_model: modelsStore.selectedModel || undefined,
+      additional_context: additionalContext.value || undefined,
+      async_mode: asyncMode.value,
+    });
+
+    // Check if it's a BatchResponse (async mode)
+    if ('job_id' in result) {
+      const batchResponse = result as BatchResponse;
+      jobId.value = batchResponse.job_id;
+      uiStore.showInfo(`Job started: ${batchResponse.job_id}`);
+      startPolling();
+    } else if (result.success) {
+      // Synchronous response
+      response.value = result as TicketResponse;
+      editedDescription.value = result.generated_description;
+      uiStore.showSuccess('Description generated successfully');
+    } else {
+      uiStore.showError(result.error || 'Failed to generate description');
+    }
+  } catch (error: any) {
+    uiStore.showError(error.response?.data?.detail || 'Failed to generate description');
+    error('Error generating description:', error);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function handleCancelJob() {
+  if (jobId.value) {
+    await cancelJobPolling();
+    jobId.value = null;
+  }
+}
+
+async function refreshJob() {
+  if (jobId.value) {
+    try {
+      const job = await getJobStatus(jobId.value);
+      if (job.status === 'completed' && job.results) {
+        response.value = job.results as TicketResponse;
+        if (response.value.generated_description) {
+          editedDescription.value = response.value.generated_description;
+        }
+        jobId.value = null;
+      }
+    } catch (error: any) {
+      uiStore.showError('Failed to refresh job status');
+    }
+  }
+}
+
+function handleViewJobResults() {
+  if (jobStatus.value?.results) {
+    response.value = jobStatus.value.results as TicketResponse;
+    if (response.value.generated_description) {
+      editedDescription.value = response.value.generated_description;
+    }
+    jobId.value = null;
+  }
+}
+
+async function handlePreview() {
+  if (!response.value) return;
+
+  previewing.value = true;
+  previewData.value = null;
+
+  try {
+    const result = await updateJiraTicket({
+      ticket_key: response.value.ticket_key,
+      description: editedDescription.value,
+      update_jira: false,
+    });
+
+    previewData.value = result;
+    uiStore.showInfo('Preview loaded - review changes before updating');
+  } catch (error: any) {
+    uiStore.showError(error.response?.data?.detail || 'Failed to preview update');
+    error('Error previewing update:', error);
+  } finally {
+    previewing.value = false;
+  }
+}
+
+async function handleUpdate() {
+  if (!response.value || !previewData.value) return;
+
+  updating.value = true;
+
+  try {
+    const result = await updateJiraTicket({
+      ticket_key: response.value.ticket_key,
+      description: editedDescription.value,
+      update_jira: true,
+    });
+
+    if (result.success && result.updated_in_jira) {
+      uiStore.showSuccess(`Successfully updated ${result.ticket_key} in JIRA`);
+      // Reset for next ticket
+      response.value = null;
+      editedDescription.value = '';
+      previewData.value = null;
+      ticketKey.value = '';
+      additionalContext.value = '';
+    } else {
+      uiStore.showError(result.error || 'Failed to update JIRA');
+    }
+  } catch (error: any) {
+    uiStore.showError(error.response?.data?.detail || 'Failed to update JIRA');
+    error('Error updating JIRA:', error);
+  } finally {
+    updating.value = false;
+  }
+}
+
+function handleTestPrompt() {
+  showABTestModal.value = true;
+}
+
+function handleABTestResult(result: any) {
+  uiStore.showInfo('A/B test completed - you can compare the results');
+}
+</script>
+
+
+
+
+
+
+
+
+
+

@@ -440,8 +440,8 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue';
 import { useUIStore } from '../stores/ui';
-import { syncStoriesFromPRD, getJobStatus, updateStoryTicket, bulkUpdateStories, createStoriesBulk } from '../api/endpoints';
-import type { PRDStorySyncResponse, BatchResponse, StoryDetail, StoryUpdateItem, BulkUpdateStoriesResponse } from '../types/api';
+import { syncStoriesFromPRD, getJobStatus, updateStoryTicket, bulkUpdateStories, bulkCreateStories } from '../api/endpoints';
+import type { PRDStorySyncResponse, BatchResponse, StoryDetail, StoryUpdateItem, BulkUpdateStoriesResponse, BulkCreateStoriesResponse } from '../types/api';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import PromptViewer from '../components/PromptViewer.vue';
 import PromptResubmitModal from '../components/PromptResubmitModal.vue';
@@ -486,8 +486,29 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
       if (job.results) {
         const results = job.results as any;
         
-        // Check if this is a bulk creation result
-        if (results.creation_results?.created_tickets) {
+        // Check if this is a BulkCreateStoriesResponse (from bulkCreateStories)
+        if (results.total_stories !== undefined && results.results !== undefined) {
+          const bulkResult = results as BulkCreateStoriesResponse;
+          
+          if (bulkResult.successful > 0) {
+            // Update local story state with created ticket keys
+            const storiesToCreate = stories.value.filter(s => !s.jira_key);
+            bulkResult.results.forEach((r, idx) => {
+              if (r.success && r.ticket_key && storiesToCreate[idx]) {
+                const storyIndex = stories.value.findIndex(s => s.summary === storiesToCreate[idx].summary);
+                if (storyIndex !== -1) {
+                  stories.value[storyIndex].jira_key = r.ticket_key;
+                }
+              }
+            });
+            uiStore.showSuccess(`Successfully created ${bulkResult.successful} story/stories: ${bulkResult.created_tickets.join(', ')}`);
+          }
+          if (bulkResult.failed > 0) {
+            uiStore.showError(`Failed to create ${bulkResult.failed} story/stories`);
+          }
+        }
+        // Check if this is a bulk creation result (old format)
+        else if (results.creation_results?.created_tickets) {
           const { stories: createdStoryKeys } = getCreatedTicketKeys(results);
           
           // Update local story state with jira_key values
@@ -546,8 +567,8 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
         jobId.value = null;
       }
     },
-    onError: (error) => {
-      logError('Job polling error:', error);
+    onError: (err) => {
+      logError('Job polling error:', err);
     },
   }
 );
@@ -839,7 +860,7 @@ async function handleCreateAll() {
     return;
   }
 
-  // Count stories without JIRA keys
+  // Get stories without JIRA keys
   const storiesToCreate = stories.value.filter(s => !s.jira_key);
   if (storiesToCreate.length === 0) {
     uiStore.showInfo('All stories already have JIRA keys');
@@ -849,12 +870,28 @@ async function handleCreateAll() {
   loading.value = true;
 
   try {
-    // Use bulk creation endpoint
-    const result = await createStoriesBulk({
-      epic_key: epicKey.value,
-      story_count: storiesToCreate.length,
+    // Build bulk request from actual story data
+    const bulkStories = storiesToCreate.map(story => {
+      // Format test cases if present
+      let testCasesText: string | null = null;
+      if (story.test_cases && story.test_cases.length > 0) {
+        testCasesText = story.test_cases.map((tc, idx) => {
+          return `${idx + 1}. ${tc.title}\n   Type: ${tc.type}\n   Description: ${tc.description}\n   Expected: ${tc.expected_result}`;
+        }).join('\n\n');
+      }
+
+      return {
+        parent_key: epicKey.value,
+        summary: story.summary,
+        description: story.description || '',
+        test_cases: testCasesText,
+      };
+    });
+
+    const result = await bulkCreateStories({
+      stories: bulkStories,
       create_tickets: true,
-      async_mode: asyncMode.value, // Use async mode when enabled
+      async_mode: asyncMode.value,
     });
 
     // Check if it's a BatchResponse (async mode)
@@ -863,40 +900,21 @@ async function handleCreateAll() {
       jobId.value = batchResponse.job_id;
       uiStore.showInfo(`Bulk creation job started: ${batchResponse.job_id}`);
       startPolling();
-      // Job polling will handle completion via onComplete callback
     } else {
       // Synchronous response
-      const storyResponse = result as PRDStorySyncResponse;
-      if (storyResponse.success && storyResponse.created_tickets) {
-        // Extract created story keys from response
-        const createdStoryKeys: string[] = [];
-        Object.values(storyResponse.created_tickets).forEach((keys: string[]) => {
-          createdStoryKeys.push(...keys);
+      const syncResult = result as BulkCreateStoriesResponse;
+
+      if (syncResult.successful > 0) {
+        // Update local story state with created ticket keys
+        updateStoriesWithCreatedKeys(syncResult, storiesToCreate);
+        uiStore.showSuccess(`Successfully created ${syncResult.successful} story/stories: ${syncResult.created_tickets.join(', ')}`);
+      }
+      if (syncResult.failed > 0) {
+        uiStore.showError(`Failed to create ${syncResult.failed} story/stories`);
+        // Log errors from individual results
+        syncResult.results.filter(r => !r.success).forEach(r => {
+          logError(`Story ${r.index} failed:`, r.error);
         });
-        
-        // Update local story state with jira_key values
-        if (storyResponse.story_details && storyResponse.story_details.length > 0) {
-          storyResponse.story_details.forEach((responseStory) => {
-            if (responseStory.jira_key) {
-              const localStoryIndex = stories.value.findIndex(s => 
-                s.summary === responseStory.summary || 
-                (!s.jira_key && responseStory.jira_key)
-              );
-              if (localStoryIndex !== -1) {
-                stories.value[localStoryIndex].jira_key = responseStory.jira_key;
-                stories.value[localStoryIndex].jira_url = responseStory.jira_url;
-              }
-            }
-          });
-        }
-        
-        if (createdStoryKeys.length > 0) {
-          uiStore.showSuccess(`Successfully created ${createdStoryKeys.length} story/stories: ${createdStoryKeys.join(', ')}`);
-        } else {
-          uiStore.showWarning('No stories were created');
-        }
-      } else {
-        uiStore.showError(storyResponse.errors?.join(', ') || 'Failed to create stories');
       }
     }
   } catch (err: any) {
@@ -913,6 +931,19 @@ async function handleCreateAll() {
   } finally {
     loading.value = false;
   }
+}
+
+function updateStoriesWithCreatedKeys(result: BulkCreateStoriesResponse, storiesToCreate: StoryDetail[]) {
+  // Update stories with their created ticket keys
+  result.results.forEach((r, idx) => {
+    if (r.success && r.ticket_key && storiesToCreate[idx]) {
+      // Find the story in the main stories array by summary match
+      const storyIndex = stories.value.findIndex(s => s.summary === storiesToCreate[idx].summary);
+      if (storyIndex !== -1) {
+        stories.value[storyIndex].jira_key = r.ticket_key;
+      }
+    }
+  });
 }
 
 async function handleBulkUpdate() {

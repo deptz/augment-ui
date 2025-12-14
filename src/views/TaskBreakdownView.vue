@@ -139,7 +139,8 @@
         <div class="space-y-4">
           <div
             v-for="(task, index) in tasks"
-            :key="index"
+            :key="task.task_id || index"
+            :data-task-index="index"
             class="border border-gray-200 rounded-lg p-4 hover:border-indigo-300 transition-colors"
           >
             <div class="flex justify-between items-start mb-2">
@@ -168,16 +169,47 @@
             </div>
             <p v-if="task.description" class="text-sm text-gray-600 mt-2 whitespace-pre-wrap">{{ task.description }}</p>
             <div v-if="task.depends_on_tasks.length > 0" class="mt-2 text-xs text-gray-500">
-              Dependencies: {{ task.depends_on_tasks.join(', ') }}
+              Dependencies: 
+              <span v-for="(depId, depIndex) in task.depends_on_tasks" :key="depId">
+                <a
+                  href="#"
+                  class="text-indigo-600 hover:text-indigo-800 hover:underline"
+                  @click.prevent="scrollToTask(depId)"
+                >{{ getTaskSummaryById(depId) }}</a><span v-if="depIndex < task.depends_on_tasks.length - 1">, </span>
+              </span>
             </div>
           </div>
+        </div>
+
+        <!-- Create All Options -->
+        <div class="mt-4 flex items-center">
+          <input
+            id="create-all-async-mode"
+            v-model="createAllAsyncMode"
+            type="checkbox"
+            class="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+          />
+          <label for="create-all-async-mode" class="ml-2 block text-sm text-gray-900">
+            Create in background (recommended for many tasks)
+          </label>
+        </div>
+
+        <!-- Create All Job Status -->
+        <div v-if="createAllJobId" class="mt-4">
+          <JobStatusCard
+            :job="createAllJobStatus"
+            :is-loading="isCreateAllPolling"
+            @cancel="handleCancelCreateAllJob"
+            @refresh="handleRefreshCreateAllJob"
+            @view-results="handleViewCreateAllJobResults"
+          />
         </div>
 
         <!-- Action Buttons -->
         <div class="mt-6 flex space-x-3">
           <button
             @click="handlePreviewAll"
-            :disabled="tasks.length === 0 || loading"
+            :disabled="tasks.length === 0 || loading || creatingAll"
             class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
           >
             <svg class="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -188,10 +220,10 @@
           </button>
           <button
             @click="handleCreateAll"
-            :disabled="tasks.length === 0 || loading"
+            :disabled="tasks.length === 0 || loading || creatingAll"
             class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
-            <LoadingSpinner v-if="loading" size="sm" color="white" class="mr-2" />
+            <LoadingSpinner v-if="creatingAll" size="sm" color="white" class="mr-2" />
             <span v-else>Create All in JIRA</span>
           </button>
         </div>
@@ -240,6 +272,7 @@
       :task-index="editingTaskIndex ?? undefined"
       :parent-key="epicKey"
       :default-story-key="getFirstStoryKey()"
+      :all-tasks="tasks"
       @close="handleCloseEdit"
       @save="handleSaveTask"
     />
@@ -250,8 +283,8 @@
 import { ref, computed } from 'vue';
 import { useModelsStore } from '../stores/models';
 import { useUIStore } from '../stores/ui';
-import { generateTasks, createJiraTicket, getJobStatus } from '../api/endpoints';
-import type { TaskGenerationResponse, TaskDetail, BatchResponse } from '../types/api';
+import { generateTasks, bulkCreateTasks, getJobStatus } from '../api/endpoints';
+import type { TaskGenerationResponse, TaskDetail, BatchResponse, BulkCreateTasksResponse } from '../types/api';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import PromptViewer from '../components/PromptViewer.vue';
 import PromptResubmitModal from '../components/PromptResubmitModal.vue';
@@ -260,6 +293,7 @@ import TaskEditModal from '../components/TaskEditModal.vue';
 import JobStatusCard from '../components/JobStatusCard.vue';
 import { useJobPolling } from '../composables/useJobPolling';
 import { error, sanitizeError } from '../utils/logger';
+import { isAsyncResponse, handleDuplicateJob } from '../utils/jobHelpers';
 
 const modelsStore = useModelsStore();
 const uiStore = useUIStore();
@@ -276,6 +310,11 @@ const showPreviewModal = ref(false);
 const showEditModal = ref(false);
 const editingTaskIndex = ref<number | null>(null);
 const jobId = ref<string | null>(null);
+
+// Create All state
+const createAllAsyncMode = ref(true);
+const creatingAll = ref(false);
+const createAllJobId = ref<string | null>(null);
 
 // Computed properties for summary stats calculated from tasks array
 const totalTasks = computed(() => tasks.value.length);
@@ -295,7 +334,7 @@ const averageTaskDays = computed(() => {
   return total / tasksWithEstimate.length;
 });
 
-// Job polling
+// Job polling for task generation
 const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } = useJobPolling(
   jobId,
   {
@@ -316,11 +355,38 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
         jobId.value = null; // Clear job ID to hide status card
       }
     },
-    onError: (error) => {
-      error('Job polling error:', error);
+    onError: (err) => {
+      error('Job polling error:', err);
     },
   }
 );
+
+// Job polling for Create All operation
+const {
+  job: createAllJobStatus,
+  isPolling: isCreateAllPolling,
+  startPolling: startCreateAllPolling,
+  cancelJob: cancelCreateAllJob,
+} = useJobPolling(createAllJobId, {
+  onComplete: async (job) => {
+    creatingAll.value = false;
+    if (job.results) {
+      const result = job.results as BulkCreateTasksResponse;
+      if (result.created_tickets && result.created_tickets.length > 0) {
+        uiStore.showSuccess(`Successfully created ${result.successful} task(s): ${result.created_tickets.join(', ')}`);
+        updateTasksWithCreatedKeys(result);
+      } else if (result.failed > 0) {
+        uiStore.showError(`Failed to create ${result.failed} task(s)`);
+      }
+    }
+    createAllJobId.value = null;
+  },
+  onError: (err) => {
+    creatingAll.value = false;
+    error('Create All job error:', err);
+    uiStore.showError('Failed to create tasks');
+  },
+});
 
 async function handleGenerate() {
   if (!storyKeys.value || !epicKey.value) {
@@ -411,6 +477,29 @@ function getFirstStoryKey(): string {
   return keys.length > 0 ? keys[0] : '';
 }
 
+// Helper to get task summary by task_id or fallback to the ID itself
+function getTaskSummaryById(taskId: string): string {
+  const task = tasks.value.find(t => t.task_id === taskId || t.summary === taskId);
+  return task ? task.summary : taskId;
+}
+
+// Scroll to a task card by its task_id
+function scrollToTask(taskId: string): void {
+  const taskIndex = tasks.value.findIndex(t => t.task_id === taskId || t.summary === taskId);
+  if (taskIndex !== -1) {
+    // Highlight the task briefly
+    const taskElements = document.querySelectorAll('[data-task-index]');
+    const targetElement = taskElements[taskIndex] as HTMLElement;
+    if (targetElement) {
+      targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      targetElement.classList.add('ring-2', 'ring-indigo-500');
+      setTimeout(() => {
+        targetElement.classList.remove('ring-2', 'ring-indigo-500');
+      }, 2000);
+    }
+  }
+}
+
 function handleRemoveTask(index: number) {
   if (confirm('Remove this task?')) {
     tasks.value.splice(index, 1);
@@ -452,63 +541,87 @@ async function handleCreateAll() {
     return;
   }
 
-  loading.value = true;
-  const createdTickets: string[] = [];
-  const errors: string[] = [];
+  creatingAll.value = true;
 
   try {
-    // Create each task
-    for (const task of tasks.value) {
-      try {
-        // Format test cases if present
-        let testCasesText: string | undefined;
-        if (task.test_cases && task.test_cases.length > 0) {
-          testCasesText = task.test_cases.map((tc, idx) => {
-            return `${idx + 1}. ${tc.title}\n   Type: ${tc.type}\n   Description: ${tc.description}\n   Expected: ${tc.expected_result}`;
-          }).join('\n\n');
-        }
+    // Build bulk request
+    const bulkTasks = tasks.value.map(task => {
+      // Format test cases if present
+      let testCasesText: string | null = null;
+      if (task.test_cases && task.test_cases.length > 0) {
+        testCasesText = task.test_cases.map((tc, idx) => {
+          return `${idx + 1}. ${tc.title}\n   Type: ${tc.type}\n   Description: ${tc.description}\n   Expected: ${tc.expected_result}`;
+        }).join('\n\n');
+      }
 
-        // Use task's story_key if available, otherwise default to first story
-        const storyKey = task.story_key || firstStoryKey;
+      return {
+        task_id: task.task_id || null, // Include for dependency resolution in backend
+        parent_key: epicKey.value,
+        summary: task.summary,
+        description: task.description || '',
+        story_key: task.story_key || firstStoryKey,
+        test_cases: testCasesText,
+        mandays: task.estimated_days,
+        blocks: task.depends_on_tasks.length > 0 ? task.depends_on_tasks : null,
+      };
+    });
 
-        // Create the ticket
-        const result = await createJiraTicket({
-          parent_key: epicKey.value,
-          summary: task.summary,
-          description: task.description || '',
-          story_key: storyKey,
-          test_cases: testCasesText,
-          blocks: task.depends_on_tasks.length > 0 ? task.depends_on_tasks : undefined,
-          create_ticket: true,
+    const result = await bulkCreateTasks({
+      tasks: bulkTasks,
+      create_tickets: true,
+      async_mode: createAllAsyncMode.value,
+    });
+
+    // Check if it's an async response
+    if (isAsyncResponse(result)) {
+      const batchResponse = result as BatchResponse;
+      createAllJobId.value = batchResponse.job_id;
+      uiStore.showInfo(`Bulk creation job started: ${batchResponse.job_id}`);
+      startCreateAllPolling();
+    } else {
+      // Synchronous response
+      const syncResult = result as BulkCreateTasksResponse;
+      creatingAll.value = false;
+
+      if (syncResult.successful > 0) {
+        uiStore.showSuccess(`Successfully created ${syncResult.successful} task(s): ${syncResult.created_tickets.join(', ')}`);
+        updateTasksWithCreatedKeys(syncResult);
+      }
+      if (syncResult.failed > 0) {
+        uiStore.showError(`Failed to create ${syncResult.failed} task(s)`);
+        // Log errors from individual results
+        syncResult.results.filter(r => !r.success).forEach(r => {
+          error(`Task ${r.index} failed:`, r.error);
         });
-
-        if (result.success && result.ticket_key) {
-          createdTickets.push(result.ticket_key);
-        } else {
-          errors.push(`${task.summary}: ${result.error || result.message}`);
-        }
-      } catch (error: any) {
-        errors.push(`${task.summary}: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
       }
     }
-
-    // Show results
-    if (createdTickets.length > 0) {
-      uiStore.showSuccess(`Successfully created ${createdTickets.length} task(s): ${createdTickets.join(', ')}`);
+  } catch (err: any) {
+    creatingAll.value = false;
+    // Check for duplicate job (409 Conflict)
+    if (err.response?.status === 409) {
+      const existingJobId = handleDuplicateJob(err);
+      if (existingJobId) {
+        createAllJobId.value = existingJobId;
+        uiStore.showInfo(`A job is already running. Tracking job: ${existingJobId}`);
+        startCreateAllPolling();
+      } else {
+        uiStore.showError('A duplicate job is already running');
+      }
+    } else {
+      const sanitized = sanitizeError(err);
+      error('Bulk create error:', sanitized);
+      uiStore.showError(err.response?.data?.detail || 'Failed to create tasks');
     }
-    if (errors.length > 0) {
-      uiStore.showError(`Failed to create ${errors.length} task(s).`);
-      error('Creation errors:', errors);
-    }
-    if (createdTickets.length === 0 && errors.length === 0) {
-      uiStore.showError('No tasks were created');
-    }
-  } catch (error: any) {
-    uiStore.showError(error.response?.data?.detail || 'Failed to create tasks');
-    error('Error creating tasks:', error);
-  } finally {
-    loading.value = false;
   }
+}
+
+function updateTasksWithCreatedKeys(result: BulkCreateTasksResponse) {
+  // Update tasks with their created ticket keys
+  result.results.forEach((r, idx) => {
+    if (r.success && r.ticket_key && tasks.value[idx]) {
+      tasks.value[idx].jira_key = r.ticket_key;
+    }
+  });
 }
 
 function handleTestPrompt() {
@@ -562,8 +675,47 @@ function handleViewJobResults() {
     jobId.value = null;
   }
 }
-</script>
 
+// Create All job handlers
+async function handleCancelCreateAllJob() {
+  if (createAllJobId.value) {
+    await cancelCreateAllJob();
+    createAllJobId.value = null;
+    creatingAll.value = false;
+  }
+}
+
+async function handleRefreshCreateAllJob() {
+  if (createAllJobId.value) {
+    try {
+      const job = await getJobStatus(createAllJobId.value);
+      if (job.status === 'completed' && job.results) {
+        const result = job.results as BulkCreateTasksResponse;
+        if (result.created_tickets && result.created_tickets.length > 0) {
+          uiStore.showSuccess(`Successfully created ${result.successful} task(s): ${result.created_tickets.join(', ')}`);
+          updateTasksWithCreatedKeys(result);
+        }
+        createAllJobId.value = null;
+        creatingAll.value = false;
+      }
+    } catch (err: any) {
+      uiStore.showError('Failed to refresh job status');
+    }
+  }
+}
+
+function handleViewCreateAllJobResults() {
+  if (createAllJobStatus.value?.results) {
+    const result = createAllJobStatus.value.results as BulkCreateTasksResponse;
+    if (result.created_tickets && result.created_tickets.length > 0) {
+      uiStore.showSuccess(`Created ${result.successful} task(s): ${result.created_tickets.join(', ')}`);
+      updateTasksWithCreatedKeys(result);
+    }
+    createAllJobId.value = null;
+    creatingAll.value = false;
+  }
+}
+</script>
 
 
 

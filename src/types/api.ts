@@ -502,6 +502,64 @@ export interface BulkCreationResponse {
   status_url?: string | null;
 }
 
+// Bulk creation result (shared between tasks and stories)
+export interface BulkCreateResult {
+  index: number;
+  success: boolean;
+  ticket_key?: string | null;
+  error?: string | null;
+}
+
+// Bulk task creation types
+export interface BulkCreateTaskItem {
+  task_id?: string | null; // Internal task ID (UUID) for dependency resolution
+  parent_key: string;
+  summary: string;
+  description: string;
+  story_key: string;
+  test_cases?: string | null;
+  mandays?: number | null;
+  blocks?: string[] | null;
+}
+
+export interface BulkCreateTasksRequest {
+  tasks: BulkCreateTaskItem[];
+  create_tickets: boolean;
+  async_mode?: boolean;
+}
+
+export interface BulkCreateTasksResponse {
+  total_tasks: number;
+  successful: number;
+  failed: number;
+  results: BulkCreateResult[];
+  created_tickets: string[];
+  message: string;
+}
+
+// Bulk story creation types
+export interface BulkCreateStoryItem {
+  parent_key: string;
+  summary: string;
+  description: string;
+  test_cases?: string | null;
+}
+
+export interface BulkCreateStoriesRequest {
+  stories: BulkCreateStoryItem[];
+  create_tickets: boolean;
+  async_mode?: boolean;
+}
+
+export interface BulkCreateStoriesResponse {
+  total_stories: number;
+  successful: number;
+  failed: number;
+  results: BulkCreateResult[];
+  created_tickets: string[];
+  message: string;
+}
+
 
 
 

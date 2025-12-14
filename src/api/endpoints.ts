@@ -30,6 +30,10 @@ import type {
   StoryCreationRequest,
   TaskCreationRequest,
   BulkCreationResponse,
+  BulkCreateTasksRequest,
+  BulkCreateTasksResponse,
+  BulkCreateStoriesRequest,
+  BulkCreateStoriesResponse,
 } from '../types/api';
 
 // Get available LLM models and providers
@@ -289,6 +293,36 @@ export async function createTasksBulk(
       ...request,
       create_tickets: request.create_tickets ?? false,
       tasks_per_story: request.tasks_per_story ?? 3,
+      async_mode: request.async_mode ?? false,
+    }
+  );
+  return response.data;
+}
+
+// Bulk create multiple task tickets
+export async function bulkCreateTasks(
+  request: BulkCreateTasksRequest
+): Promise<BulkCreateTasksResponse | BatchResponse> {
+  const response = await apiClient.axios.post<BulkCreateTasksResponse | BatchResponse>(
+    '/jira/bulk-create-tasks',
+    {
+      ...request,
+      create_tickets: request.create_tickets ?? false,
+      async_mode: request.async_mode ?? false,
+    }
+  );
+  return response.data;
+}
+
+// Bulk create multiple story tickets
+export async function bulkCreateStories(
+  request: BulkCreateStoriesRequest
+): Promise<BulkCreateStoriesResponse | BatchResponse> {
+  const response = await apiClient.axios.post<BulkCreateStoriesResponse | BatchResponse>(
+    '/jira/bulk-create-stories',
+    {
+      ...request,
+      create_tickets: request.create_tickets ?? false,
       async_mode: request.async_mode ?? false,
     }
   );

@@ -8,8 +8,11 @@ A Vue.js 3 frontend application for the [Augment](https://github.com/deptz/augme
 
 - **Single Ticket Backfill** - Generate AI-powered descriptions for individual JIRA tickets
 - **Task Breakdown** - Break down stories into detailed, actionable tasks with dependency management
-- **Story Coverage Analysis** - Analyze how well tasks cover story requirements and identify gaps
-- **PRD Story Sync** - Sync story tickets from PRD documents to JIRA
+- **Story Coverage Analysis** - Analyze how well tasks cover story requirements and identify gaps with optional additional context for focused analysis
+- **PRD Story Sync** - Sync story tickets from PRD documents to JIRA with bulk operations and existing ticket linking
+- **Bulk Story Updates** - Update multiple story tickets in JIRA simultaneously
+- **Existing Ticket Detection** - Automatically detect and link existing JIRA tickets from PRD documents
+- **Story Editing & Sync** - Edit stories locally and sync changes back to JIRA
 - **A/B Testing** - Compare different prompts and models to optimize generation quality
 - **Prompt Visibility** - View and copy the exact prompts sent to LLMs
 - **Background Job Processing** - Run long-running operations asynchronously with real-time progress tracking
@@ -83,19 +86,47 @@ All features follow a consistent preview-first workflow:
 ### Feature Guides
 
 - **Single Ticket Backfill** - Navigate to "Single Ticket", enter ticket key, generate, review, and commit
-- **Task Breakdown** - Navigate to "Task Breakdown", enter story/epic keys, generate tasks, review/edit dependencies using the dropdown selector, and bulk create. Dependencies are automatically resolved using task IDs when available.
-- **Story Coverage Analysis** - Navigate to "Story Coverage", analyze a story, review gaps and suggestions, apply updates
-- **PRD Story Sync** - Navigate to "PRD Story Sync", enter epic key or PRD URL, review generated stories, sync to JIRA
+- **Task Breakdown** - Navigate to "Task Breakdown", enter story/epic keys, generate tasks, review/edit dependencies, and bulk create tasks efficiently using async mode for large batches
+- **Story Coverage Analysis** - Navigate to "Story Coverage", analyze a story with optional additional context, review gaps and suggestions, apply updates
+- **PRD Story Sync** - Navigate to "PRD Story Sync", enter epic key or PRD URL, review generated stories with existing ticket metadata, edit stories, bulk update, and sync to JIRA with async mode support
 - **Background Jobs** - Navigate to "Jobs" to monitor and manage long-running operations
 
-#### Task Dependency Management
+#### Task Breakdown Features
 
-When working with Task Breakdown, you can manage task dependencies through an intuitive dropdown interface:
+When working with Task Breakdown, you can efficiently manage and create tasks:
 
-- **Dependency Selection**: Use the multi-select dropdown to choose which tasks the current task depends on
-- **Automatic Resolution**: The system automatically uses task IDs (when available) for accurate dependency tracking, falling back to task summaries when needed
-- **Real-time Updates**: Dependency options update automatically when task summaries are modified
-- **JIRA Integration**: When creating tasks in JIRA, dependencies are resolved to JIRA ticket keys for already-created tasks, ensuring proper linking
+- **Bulk Task Creation**: Create multiple tasks at once using the bulk creation endpoint for improved performance
+- **Async Mode Support**: Enable "Run in background" for large task batches to avoid timeouts and improve UX
+- **Dependency Management**: Manage task dependencies through an intuitive interface
+  - **Dependency Selection**: Use the multi-select dropdown to choose which tasks the current task depends on
+  - **Automatic Resolution**: The system automatically uses task IDs (when available) for accurate dependency tracking, falling back to task summaries when needed
+  - **Real-time Updates**: Dependency options update automatically when task summaries are modified
+  - **JIRA Integration**: When creating tasks in JIRA, dependencies are resolved to JIRA ticket keys for already-created tasks, ensuring proper linking
+
+#### PRD Story Sync Features
+
+The PRD Story Sync feature includes advanced capabilities for managing stories:
+
+- **Existing Ticket Detection**: Automatically detects existing JIRA tickets linked in PRD documents
+  - Shows ticket source (PRD table, JIRA API, or newly created)
+  - Displays action taken (created, updated, or skipped)
+  - Indicates if ticket was updated during sync
+  - Clickable JIRA key badges that open tickets in new tabs
+
+- **Bulk Operations**: 
+  - Bulk update multiple stories at once using the "Bulk Update" button
+  - Updates all stories with JIRA keys simultaneously
+  - Supports async processing for large batches
+
+- **Story Editing & Sync**:
+  - Edit stories locally with full test case support
+  - When editing existing stories with JIRA keys, option to sync changes back to JIRA
+  - Automatic confirmation prompts for JIRA updates
+
+- **Existing Ticket Actions**: Configure how to handle existing tickets:
+  - **Skip**: Don't create or update (default)
+  - **Update**: Update existing tickets with new information
+  - **Error**: Return an error if ticket already exists
 
 For detailed usage instructions, see [QUICK_START.md](QUICK_START.md).
 

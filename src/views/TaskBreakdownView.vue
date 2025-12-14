@@ -168,7 +168,7 @@
             </div>
             <p v-if="task.description" class="text-sm text-gray-600 mt-2 whitespace-pre-wrap">{{ task.description }}</p>
             <div v-if="task.depends_on_tasks.length > 0" class="mt-2 text-xs text-gray-500">
-              Dependencies: {{ getDependencyDisplay(task) }}
+              Dependencies: {{ task.depends_on_tasks.join(', ') }}
             </div>
           </div>
         </div>
@@ -240,7 +240,6 @@
       :task-index="editingTaskIndex ?? undefined"
       :parent-key="epicKey"
       :default-story-key="getFirstStoryKey()"
-      :all-tasks="tasks"
       @close="handleCloseEdit"
       @save="handleSaveTask"
     />
@@ -310,7 +309,6 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
           const firstStory = keys.length > 0 ? keys[0] : '';
           tasks.value = (response.value.task_details || []).map(task => ({
             ...task,
-            task_id: task.task_id, // Preserve task_id from API
             story_key: task.story_key || firstStory,
           }));
           uiStore.showSuccess(`Generated ${tasks.value.length} tasks`);
@@ -358,7 +356,6 @@ async function handleGenerate() {
       const firstStory = keys.length > 0 ? keys[0] : '';
       tasks.value = (result.task_details || []).map(task => ({
         ...task,
-        task_id: task.task_id, // Preserve task_id from API
         story_key: task.story_key || firstStory,
       }));
       
@@ -412,40 +409,6 @@ function getFirstStoryKey(): string {
   if (!storyKeys.value) return '';
   const keys = storyKeys.value.split(',').map(k => k.trim()).filter(k => k);
   return keys.length > 0 ? keys[0] : '';
-}
-
-function getDependencyDisplay(task: TaskDetail): string {
-  // Map dependency values (task_id or summary) to task summaries for display
-  return task.depends_on_tasks.map(dep => {
-    // Try to find matching task by task_id or summary
-    const matchingTask = tasks.value.find(t => 
-      t.task_id === dep || t.summary === dep
-    );
-    return matchingTask ? matchingTask.summary : dep;
-  }).join(', ');
-}
-
-function resolveDependencies(dependsOnTasks: string[]): string[] {
-  // Resolve dependencies: prefer jira_key if task is already created, 
-  // otherwise use task_id if available, fallback to summary
-  return dependsOnTasks.map(dep => {
-    // Find matching task by task_id or summary
-    const matchingTask = tasks.value.find(t => 
-      t.task_id === dep || t.summary === dep
-    );
-    
-    if (matchingTask) {
-      // If task has been created in JIRA, use jira_key
-      if (matchingTask.jira_key) {
-        return matchingTask.jira_key;
-      }
-      // Otherwise, prefer task_id if available, fallback to summary
-      return matchingTask.task_id || matchingTask.summary;
-    }
-    
-    // If no matching task found, return as-is (might be external reference)
-    return dep;
-  });
 }
 
 function handleRemoveTask(index: number) {
@@ -508,12 +471,6 @@ async function handleCreateAll() {
         // Use task's story_key if available, otherwise default to first story
         const storyKey = task.story_key || firstStoryKey;
 
-        // Resolve dependencies: prefer jira_key for already-created tasks, 
-        // otherwise use task_id or summary
-        const resolvedDependencies = task.depends_on_tasks.length > 0 
-          ? resolveDependencies(task.depends_on_tasks)
-          : undefined;
-
         // Create the ticket
         const result = await createJiraTicket({
           parent_key: epicKey.value,
@@ -521,19 +478,11 @@ async function handleCreateAll() {
           description: task.description || '',
           story_key: storyKey,
           test_cases: testCasesText,
-          blocks: resolvedDependencies,
+          blocks: task.depends_on_tasks.length > 0 ? task.depends_on_tasks : undefined,
           create_ticket: true,
         });
 
         if (result.success && result.ticket_key) {
-          // Update task with jira_key for future dependency resolution
-          const taskIndex = tasks.value.findIndex(t => 
-            (t.task_id && task.task_id && t.task_id === task.task_id) ||
-            (!t.task_id && !task.task_id && t.summary === task.summary)
-          );
-          if (taskIndex !== -1) {
-            tasks.value[taskIndex].jira_key = result.ticket_key;
-          }
           createdTickets.push(result.ticket_key);
         } else {
           errors.push(`${task.summary}: ${result.error || result.message}`);
@@ -588,7 +537,6 @@ async function refreshJob() {
           const firstStory = keys.length > 0 ? keys[0] : '';
           tasks.value = (response.value.task_details || []).map(task => ({
             ...task,
-            task_id: task.task_id, // Preserve task_id from API
             story_key: task.story_key || firstStory,
           }));
         }
@@ -615,7 +563,6 @@ function handleViewJobResults() {
   }
 }
 </script>
-
 
 
 

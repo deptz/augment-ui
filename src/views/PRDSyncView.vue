@@ -182,13 +182,62 @@
               <div class="flex-1">
                 <h3 class="text-base font-medium text-gray-900">{{ story.summary }}</h3>
               </div>
-              <div class="flex items-center space-x-2 ml-4">
-                <span
-                  v-if="story.jira_key"
-                  class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
-                >
-                  {{ story.jira_key }}
-                </span>
+              <div class="flex items-center space-x-2 ml-4 flex-wrap gap-2">
+                <!-- JIRA Key with metadata -->
+                <div v-if="story.jira_key" class="flex items-center space-x-1">
+                  <a
+                    v-if="story.jira_url"
+                    :href="story.jira_url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
+                    :title="`Open ${story.jira_key} in JIRA`"
+                  >
+                    {{ story.jira_key }}
+                    <svg class="h-3 w-3 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
+                  <span
+                    v-else
+                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                  >
+                    {{ story.jira_key }}
+                  </span>
+                  <!-- Ticket Source Badge -->
+                  <span
+                    v-if="story.ticket_source"
+                    :class="{
+                      'bg-blue-100 text-blue-800': story.ticket_source === 'prd_table',
+                      'bg-purple-100 text-purple-800': story.ticket_source === 'jira_api',
+                      'bg-green-100 text-green-800': story.ticket_source === 'newly_created',
+                    }"
+                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                    :title="getTicketSourceTooltip(story.ticket_source)"
+                  >
+                    {{ getTicketSourceLabel(story.ticket_source) }}
+                  </span>
+                  <!-- Action Taken Badge -->
+                  <span
+                    v-if="story.action_taken"
+                    :class="{
+                      'bg-green-100 text-green-800': story.action_taken === 'created',
+                      'bg-yellow-100 text-yellow-800': story.action_taken === 'updated',
+                      'bg-gray-100 text-gray-800': story.action_taken === 'skipped',
+                    }"
+                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium"
+                  >
+                    {{ story.action_taken === 'created' ? 'Created' : story.action_taken === 'updated' ? 'Updated' : 'Skipped' }}
+                  </span>
+                  <!-- Was Updated Indicator -->
+                  <span
+                    v-if="story.was_updated"
+                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800"
+                    title="This ticket was updated during sync"
+                  >
+                    Synced
+                  </span>
+                </div>
                 <button
                   v-if="!story.jira_key"
                   @click="handleCreateStory(index)"
@@ -272,6 +321,26 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div v-if="stories.length > 0" class="mt-6 flex space-x-3">
+          <button
+            @click="handleCreateAll"
+            :disabled="storiesWithoutJiraKey.length === 0 || loading"
+            class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            <LoadingSpinner v-if="loading" size="sm" color="white" class="mr-2" />
+            <span v-else>Create All in JIRA ({{ storiesWithoutJiraKey.length }})</span>
+          </button>
+          <button
+            @click="handleBulkUpdate"
+            :disabled="storiesWithJiraKey.length === 0 || loading || bulkUpdating"
+            class="flex-1 inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            <LoadingSpinner v-if="bulkUpdating" size="sm" color="white" class="mr-2" />
+            <span v-else>Update All in JIRA ({{ storiesWithJiraKey.length }})</span>
+          </button>
         </div>
       </div>
 
@@ -369,19 +438,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue';
+import { ref, computed, nextTick } from 'vue';
 import { useUIStore } from '../stores/ui';
-import { syncStoriesFromPRD, getJobStatus } from '../api/endpoints';
-import type { PRDStorySyncResponse, BatchResponse } from '../types/api';
+import { syncStoriesFromPRD, getJobStatus, updateStoryTicket, bulkUpdateStories, createStoriesBulk } from '../api/endpoints';
+import type { PRDStorySyncResponse, BatchResponse, StoryDetail, StoryUpdateItem, BulkUpdateStoriesResponse } from '../types/api';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import PromptViewer from '../components/PromptViewer.vue';
 import PromptResubmitModal from '../components/PromptResubmitModal.vue';
 import JobStatusCard from '../components/JobStatusCard.vue';
 import StoryEditModal from '../components/StoryEditModal.vue';
 import { useJobPolling } from '../composables/useJobPolling';
-import { createStoryTicket } from '../api/endpoints';
-import type { StoryDetail } from '../types/api';
 import { log, error as logError } from '../utils/logger';
+import { isAsyncResponse, getCreatedTicketKeys, handleDuplicateJob } from '../utils/jobHelpers';
 
 const uiStore = useUIStore();
 
@@ -397,7 +465,18 @@ const showABTestModal = ref(false);
 const showEditModal = ref(false);
 const editingStoryIndex = ref<number | null>(null);
 const creatingStoryIndex = ref<number | null>(null);
+const bulkUpdating = ref(false);
 const jobId = ref<string | null>(null);
+
+// Computed property for stories with JIRA keys
+const storiesWithJiraKey = computed(() => {
+  return stories.value.filter(s => s.jira_key);
+});
+
+// Computed property for stories without JIRA keys
+const storiesWithoutJiraKey = computed(() => {
+  return stories.value.filter(s => !s.jira_key);
+});
 
 // Job polling
 const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } = useJobPolling(
@@ -405,34 +484,63 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
   {
     onComplete: async (job) => {
       if (job.results) {
-        // Ensure we're setting the response correctly
-        const results = job.results as PRDStorySyncResponse;
+        const results = job.results as any;
         
-        // Log for debugging
-        log('Job completed, setting response:', {
-          success: results.success,
-          storyCount: results.story_details?.length || 0,
-          hasStoryDetails: !!results.story_details,
-        });
-        
-        // Set response and wait for Vue to update
-        response.value = results;
-        
-        // Initialize stories array from response
-        if (results.story_details && results.story_details.length > 0) {
-          stories.value = results.story_details.map(story => ({ ...story }));
-        }
-        
-        await nextTick();
-        
-        if (results.success) {
-          const storyCount = results.story_details?.length || 0;
-          uiStore.showSuccess(`Sync complete: ${storyCount} story/stories processed`);
+        // Check if this is a bulk creation result
+        if (results.creation_results?.created_tickets) {
+          const { stories: createdStoryKeys } = getCreatedTicketKeys(results);
+          
+          // Update local story state with jira_key values
+          if (results.story_details && results.story_details.length > 0) {
+            results.story_details.forEach((responseStory: StoryDetail) => {
+              if (responseStory.jira_key) {
+                const localStoryIndex = stories.value.findIndex(s => 
+                  s.summary === responseStory.summary || 
+                  (!s.jira_key && responseStory.jira_key)
+                );
+                if (localStoryIndex !== -1) {
+                  stories.value[localStoryIndex].jira_key = responseStory.jira_key;
+                  stories.value[localStoryIndex].jira_url = responseStory.jira_url;
+                }
+              }
+            });
+          }
+          
+          if (createdStoryKeys.length > 0) {
+            uiStore.showSuccess(`Successfully created ${createdStoryKeys.length} story/stories: ${createdStoryKeys.join(', ')}`);
+          } else {
+            uiStore.showWarning('Job completed but no stories were created');
+          }
         } else {
-          // Even if not successful, show the stories if they exist
-          const storyCount = results.story_details?.length || 0;
-          if (storyCount > 0) {
-            uiStore.showInfo(`Processed ${storyCount} story/stories (no tickets created)`);
+          // This is a PRD sync result
+          const prdResults = results as PRDStorySyncResponse;
+          
+          // Log for debugging
+          log('Job completed, setting response:', {
+            success: prdResults.success,
+            storyCount: prdResults.story_details?.length || 0,
+            hasStoryDetails: !!prdResults.story_details,
+          });
+          
+          // Set response and wait for Vue to update
+          response.value = prdResults;
+          
+          // Initialize stories array from response
+          if (prdResults.story_details && prdResults.story_details.length > 0) {
+            stories.value = prdResults.story_details.map(story => ({ ...story }));
+          }
+          
+          await nextTick();
+          
+          if (prdResults.success) {
+            const storyCount = prdResults.story_details?.length || 0;
+            uiStore.showSuccess(`Sync complete: ${storyCount} story/stories processed`);
+          } else {
+            // Even if not successful, show the stories if they exist
+            const storyCount = prdResults.story_details?.length || 0;
+            if (storyCount > 0) {
+              uiStore.showInfo(`Processed ${storyCount} story/stories (no tickets created)`);
+            }
           }
         }
         jobId.value = null;
@@ -605,11 +713,49 @@ function handleCloseEdit() {
   editingStoryIndex.value = null;
 }
 
-function handleSaveStory(updatedStory: StoryDetail, index?: number) {
+async function handleSaveStory(updatedStory: StoryDetail, index?: number) {
   if (index !== undefined && index !== null) {
     // Update existing story
+    const originalStory = stories.value[index];
     stories.value[index] = updatedStory;
-    uiStore.showSuccess('Story updated successfully');
+    
+    // If story has jira_key, offer to update in JIRA
+    if (originalStory.jira_key && originalStory.jira_key === updatedStory.jira_key) {
+      const shouldUpdate = confirm('This story exists in JIRA. Update it in JIRA as well?');
+      if (shouldUpdate) {
+        try {
+          // Format test cases if present
+          let testCasesText: string | undefined;
+          if (updatedStory.test_cases && updatedStory.test_cases.length > 0) {
+            testCasesText = updatedStory.test_cases.map((tc, idx) => {
+              return `${idx + 1}. ${tc.title}\n   Type: ${tc.type}\n   Description: ${tc.description}\n   Expected: ${tc.expected_result}`;
+            }).join('\n\n');
+          }
+
+          const result = await updateStoryTicket({
+            story_key: originalStory.jira_key,
+            summary: updatedStory.summary,
+            description: updatedStory.description,
+            test_cases: testCasesText,
+            update_jira: true,
+          });
+
+          if (result.success && result.updated_in_jira) {
+            uiStore.showSuccess(`Story updated successfully in JIRA: ${originalStory.jira_key}`);
+          } else {
+            uiStore.showWarning('Story saved locally, but JIRA update may have failed');
+          }
+        } catch (error: any) {
+          const errorMsg = error.response?.data?.detail || error.message || 'Unknown error';
+          uiStore.showError(`Failed to update story in JIRA: ${errorMsg}`);
+          logError('Error updating story in JIRA:', error);
+        }
+      } else {
+        uiStore.showSuccess('Story updated locally');
+      }
+    } else {
+      uiStore.showSuccess('Story updated successfully');
+    }
   } else {
     // Add new story
     stories.value.push(updatedStory);
@@ -693,71 +839,179 @@ async function handleCreateAll() {
     return;
   }
 
+  // Count stories without JIRA keys
+  const storiesToCreate = stories.value.filter(s => !s.jira_key);
+  if (storiesToCreate.length === 0) {
+    uiStore.showInfo('All stories already have JIRA keys');
+    return;
+  }
+
   loading.value = true;
-  const createdTickets: string[] = [];
-  const errors: string[] = [];
 
   try {
-    // Create each story
-    for (const story of stories.value) {
-      // Skip if already created
-      if (story.jira_key) {
-        createdTickets.push(story.jira_key);
-        continue;
-      }
+    // Use bulk creation endpoint
+    const result = await createStoriesBulk({
+      epic_key: epicKey.value,
+      story_count: storiesToCreate.length,
+      create_tickets: true,
+      async_mode: asyncMode.value, // Use async mode when enabled
+    });
 
-      try {
-        // Use description as-is (acceptance criteria are already included in description per API spec)
-        const description = story.description || '';
-
-        // Format test cases if present
-        let testCasesText: string | undefined;
-        if (story.test_cases && story.test_cases.length > 0) {
-          testCasesText = story.test_cases.map((tc, idx) => {
-            return `${idx + 1}. ${tc.title}\n   Type: ${tc.type}\n   Description: ${tc.description}\n   Expected: ${tc.expected_result}`;
-          }).join('\n\n');
-        }
-
-        // Create the story ticket using the story-specific endpoint
-        const result = await createStoryTicket({
-          parent_key: epicKey.value,
-          summary: story.summary,
-          description: description,
-          test_cases: testCasesText,
-          create_ticket: true,
+    // Check if it's a BatchResponse (async mode)
+    if (isAsyncResponse(result)) {
+      const batchResponse = result as BatchResponse;
+      jobId.value = batchResponse.job_id;
+      uiStore.showInfo(`Bulk creation job started: ${batchResponse.job_id}`);
+      startPolling();
+      // Job polling will handle completion via onComplete callback
+    } else {
+      // Synchronous response
+      const storyResponse = result as PRDStorySyncResponse;
+      if (storyResponse.success && storyResponse.created_tickets) {
+        // Extract created story keys from response
+        const createdStoryKeys: string[] = [];
+        Object.values(storyResponse.created_tickets).forEach((keys: string[]) => {
+          createdStoryKeys.push(...keys);
         });
-
-        if (result.success && result.ticket_key) {
-          // Update the story with the created key
-          const storyIndex = stories.value.findIndex(s => s === story);
-          if (storyIndex !== -1) {
-            stories.value[storyIndex].jira_key = result.ticket_key;
-          }
-          createdTickets.push(result.ticket_key);
-        } else {
-          errors.push(`${story.summary}: ${result.error || result.message}`);
+        
+        // Update local story state with jira_key values
+        if (storyResponse.story_details && storyResponse.story_details.length > 0) {
+          storyResponse.story_details.forEach((responseStory) => {
+            if (responseStory.jira_key) {
+              const localStoryIndex = stories.value.findIndex(s => 
+                s.summary === responseStory.summary || 
+                (!s.jira_key && responseStory.jira_key)
+              );
+              if (localStoryIndex !== -1) {
+                stories.value[localStoryIndex].jira_key = responseStory.jira_key;
+                stories.value[localStoryIndex].jira_url = responseStory.jira_url;
+              }
+            }
+          });
         }
-      } catch (error: any) {
-        errors.push(`${story.summary}: ${error.response?.data?.detail || error.message || 'Unknown error'}`);
+        
+        if (createdStoryKeys.length > 0) {
+          uiStore.showSuccess(`Successfully created ${createdStoryKeys.length} story/stories: ${createdStoryKeys.join(', ')}`);
+        } else {
+          uiStore.showWarning('No stories were created');
+        }
+      } else {
+        uiStore.showError(storyResponse.errors?.join(', ') || 'Failed to create stories');
       }
     }
-
-    // Show results
-    if (createdTickets.length > 0) {
-      uiStore.showSuccess(`Successfully created ${createdTickets.length} story/stories: ${createdTickets.join(', ')}`);
+  } catch (err: any) {
+    // Handle 409 Conflict for duplicate jobs
+    const duplicateJobId = handleDuplicateJob(err);
+    if (duplicateJobId) {
+      jobId.value = duplicateJobId;
+      uiStore.showInfo(`Job already in progress: ${duplicateJobId}. Monitoring existing job.`);
+      startPolling();
+    } else {
+      logError('Error creating stories:', err);
+      uiStore.showError(err.response?.data?.detail || 'Failed to create stories');
     }
-    if (errors.length > 0) {
-      uiStore.showError(`Failed to create ${errors.length} story/stories.`);
-      logError('Creation errors:', errors);
-    }
-    if (createdTickets.length === 0 && errors.length === 0) {
-      uiStore.showError('No stories were created');
-    }
-  } catch (error: any) {
-    uiStore.showError(error.response?.data?.detail || 'Failed to create stories');
-    logError('Error creating stories:', error);
   } finally {
     loading.value = false;
+  }
+}
+
+async function handleBulkUpdate() {
+  const storiesToUpdate = stories.value.filter(s => s.jira_key);
+  
+  if (storiesToUpdate.length === 0) {
+    uiStore.showError('No stories with JIRA keys to update');
+    return;
+  }
+
+  const confirmed = confirm(`Update ${storiesToUpdate.length} story/stories in JIRA?`);
+  if (!confirmed) {
+    return;
+  }
+
+  bulkUpdating.value = true;
+
+  try {
+    // Prepare update items
+    const updateItems: StoryUpdateItem[] = storiesToUpdate.map(story => {
+      // Format test cases if present
+      let testCasesText: string | undefined;
+      if (story.test_cases && story.test_cases.length > 0) {
+        testCasesText = story.test_cases.map((tc, idx) => {
+          return `${idx + 1}. ${tc.title}\n   Type: ${tc.type}\n   Description: ${tc.description}\n   Expected: ${tc.expected_result}`;
+        }).join('\n\n');
+      }
+
+      return {
+        story_key: story.jira_key!,
+        summary: story.summary,
+        description: story.description,
+        test_cases: testCasesText,
+      };
+    });
+
+    const result = await bulkUpdateStories({
+      stories: updateItems,
+      dry_run: false, // Actually update
+      async_mode: false, // Synchronous for now
+    });
+
+    // Check if it's a BatchResponse (async mode)
+    if ('job_id' in result) {
+      const batchResponse = result as BatchResponse;
+      jobId.value = batchResponse.job_id;
+      uiStore.showInfo(`Bulk update job started: ${batchResponse.job_id}`);
+      startPolling();
+    } else {
+      // BulkUpdateStoriesResponse
+      const bulkResponse = result as BulkUpdateStoriesResponse;
+      const successCount = bulkResponse.successful || 0;
+      const failCount = bulkResponse.failed || 0;
+      
+      if (successCount > 0) {
+        uiStore.showSuccess(`Successfully updated ${successCount} story/stories`);
+      }
+      if (failCount > 0) {
+        uiStore.showError(`Failed to update ${failCount} story/stories`);
+        // Log individual errors
+        if (bulkResponse.results) {
+          const errors = bulkResponse.results
+            .filter((r) => !r.success && r.error)
+            .map((r) => `${r.story_key}: ${r.error}`);
+          logError('Bulk update errors:', errors);
+        }
+      }
+    }
+  } catch (error: any) {
+    uiStore.showError(error.response?.data?.detail || 'Failed to bulk update stories');
+    logError('Error bulk updating stories:', error);
+  } finally {
+    bulkUpdating.value = false;
+  }
+}
+
+function getTicketSourceLabel(source: string): string {
+  switch (source) {
+    case 'prd_table':
+      return 'PRD';
+    case 'jira_api':
+      return 'JIRA';
+    case 'newly_created':
+      return 'New';
+    default:
+      return source;
+  }
+}
+
+function getTicketSourceTooltip(source: string): string {
+  switch (source) {
+    case 'prd_table':
+      return 'Found in PRD table';
+    case 'jira_api':
+      return 'Found in JIRA';
+    case 'newly_created':
+      return 'Newly created';
+    default:
+      return source;
   }
 }
 </script>

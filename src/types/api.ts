@@ -295,6 +295,10 @@ export interface StoryDetail {
   test_cases?: TestCase[];
   tasks?: TaskDetail[];
   jira_key?: string | null;
+  jira_url?: string | null;
+  ticket_source?: 'prd_table' | 'jira_api' | 'newly_created' | null;
+  action_taken?: 'created' | 'updated' | 'skipped' | null;
+  was_updated?: boolean | null;
 }
 
 export interface PRDStorySyncResponse {
@@ -402,6 +406,100 @@ export interface TimelineResponse {
   user_prompt?: string | null;
   llm_provider?: string | null;
   llm_model?: string | null;
+}
+
+// Story update types
+export interface UpdateStoryTicketRequest {
+  story_key: string;
+  summary?: string | null;
+  description?: string | null;
+  test_cases?: string | null;
+  parent_key?: string | null;
+  links?: IssueLink[] | null;
+  update_jira: boolean;
+}
+
+export interface StoryUpdateItem {
+  story_key: string;
+  summary?: string | null;
+  description?: string | null;
+  test_cases?: string | null;
+  parent_key?: string | null;
+  links?: IssueLink[] | null;
+}
+
+export interface StoryUpdateResult {
+  story_key: string;
+  success: boolean;
+  updated_in_jira: boolean;
+  updates_applied?: {
+    [key: string]: boolean;
+  };
+  links_created?: Array<{
+    link_type: string;
+    target_key: string;
+    direction: string;
+    status: string;
+  }>;
+  error?: string | null;
+  preview?: any;
+}
+
+export interface BulkUpdateStoriesRequest {
+  stories: StoryUpdateItem[];
+  dry_run?: boolean;
+  async_mode?: boolean;
+}
+
+export interface BulkUpdateStoriesResponse {
+  total_stories: number;
+  successful: number;
+  failed: number;
+  results: StoryUpdateResult[];
+  job_id?: string | null;
+  status_url?: string | null;
+  message: string;
+}
+
+// Bulk creation request types
+export interface BulkTicketCreationRequest {
+  epic_key: string;
+  create_tickets: boolean;
+  operation_mode?: 'documentation' | 'planning' | 'hybrid';
+  async_mode?: boolean;
+}
+
+export interface StoryCreationRequest {
+  epic_key: string;
+  story_count?: number;
+  create_tickets: boolean;
+  async_mode?: boolean;
+}
+
+export interface TaskCreationRequest {
+  story_keys: string[];
+  tasks_per_story?: number;
+  create_tickets: boolean;
+  async_mode?: boolean;
+}
+
+// Bulk creation response type
+export interface BulkCreationResponse {
+  epic_key: string;
+  create_tickets: boolean;
+  success: boolean;
+  planning_results?: any;
+  creation_results?: {
+    created_tickets: {
+      stories: string[];
+      tasks: string[];
+    };
+    success: boolean;
+  };
+  errors: string[];
+  execution_time_seconds: number;
+  job_id?: string | null;
+  status_url?: string | null;
 }
 
 

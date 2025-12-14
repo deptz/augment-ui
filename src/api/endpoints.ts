@@ -23,6 +23,13 @@ import type {
   SprintPlanningResponse,
   TimelineRequest,
   TimelineResponse,
+  UpdateStoryTicketRequest,
+  BulkUpdateStoriesRequest,
+  BulkUpdateStoriesResponse,
+  BulkTicketCreationRequest,
+  StoryCreationRequest,
+  TaskCreationRequest,
+  BulkCreationResponse,
 } from '../types/api';
 
 // Get available LLM models and providers
@@ -70,6 +77,7 @@ export async function analyzeStoryCoverage(params: {
   include_test_cases?: boolean;
   llm_provider?: string;
   llm_model?: string;
+  additional_context?: string;
   async_mode?: boolean;
 }): Promise<StoryCoverageResponse | BatchResponse> {
   const response = await apiClient.axios.post<StoryCoverageResponse | BatchResponse>('/analyze/story-coverage', {
@@ -205,6 +213,83 @@ export async function createSprintTimeline(
       dry_run: params.dry_run ?? true, // Default to preview mode
       async_mode: params.async_mode ?? false,
       sprint_duration_days: params.sprint_duration_days ?? 14,
+    }
+  );
+  return response.data;
+}
+
+// Update a single story ticket
+export async function updateStoryTicket(
+  request: UpdateStoryTicketRequest
+): Promise<JiraUpdateResponse> {
+  const response = await apiClient.axios.post<JiraUpdateResponse>(
+    '/jira/update-story-ticket',
+    {
+      ...request,
+      update_jira: request.update_jira ?? false, // Default to preview mode
+    }
+  );
+  return response.data;
+}
+
+// Bulk update multiple story tickets
+export async function bulkUpdateStories(
+  request: BulkUpdateStoriesRequest
+): Promise<BulkUpdateStoriesResponse | BatchResponse> {
+  const response = await apiClient.axios.post<BulkUpdateStoriesResponse | BatchResponse>(
+    '/jira/bulk-update-stories',
+    {
+      ...request,
+      dry_run: request.dry_run ?? true, // Default to preview mode
+      async_mode: request.async_mode ?? false,
+    }
+  );
+  return response.data;
+}
+
+// Epic bulk creation
+export async function createEpicBulk(
+  request: BulkTicketCreationRequest
+): Promise<BulkCreationResponse | BatchResponse> {
+  const response = await apiClient.axios.post<BulkCreationResponse | BatchResponse>(
+    '/plan/epic/create',
+    {
+      ...request,
+      create_tickets: request.create_tickets ?? false,
+      operation_mode: request.operation_mode ?? 'hybrid',
+      async_mode: request.async_mode ?? false,
+    }
+  );
+  return response.data;
+}
+
+// Story bulk creation
+export async function createStoriesBulk(
+  request: StoryCreationRequest
+): Promise<PRDStorySyncResponse | BatchResponse> {
+  const response = await apiClient.axios.post<PRDStorySyncResponse | BatchResponse>(
+    '/plan/stories/create',
+    {
+      ...request,
+      create_tickets: request.create_tickets ?? false,
+      story_count: request.story_count ?? 5,
+      async_mode: request.async_mode ?? false,
+    }
+  );
+  return response.data;
+}
+
+// Task bulk creation
+export async function createTasksBulk(
+  request: TaskCreationRequest
+): Promise<TaskGenerationResponse | BatchResponse> {
+  const response = await apiClient.axios.post<TaskGenerationResponse | BatchResponse>(
+    '/plan/tasks/create',
+    {
+      ...request,
+      create_tickets: request.create_tickets ?? false,
+      tasks_per_story: request.tasks_per_story ?? 3,
+      async_mode: request.async_mode ?? false,
     }
   );
   return response.data;

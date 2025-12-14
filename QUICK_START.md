@@ -74,7 +74,7 @@ Your credentials will be stored in browser localStorage for future sessions.
 | **Single Ticket** | `/single-ticket` | Generate descriptions for individual tickets |
 | **Task Breakdown** | `/task-breakdown` | Break stories into tasks |
 | **Story Coverage** | `/story-coverage` | Analyze task coverage and identify gaps |
-| **PRD Story Sync** | `/prd-sync` | Sync stories from PRD documents |
+| **PRD Story Sync** | `/prd-sync` | Sync stories from PRD documents with bulk updates and existing ticket linking |
 | **Jobs** | `/jobs` | Monitor background job processing |
 | **Settings** | `/settings` | Manage authentication and configuration |
 
@@ -93,19 +93,24 @@ Your credentials will be stored in browser localStorage for future sessions.
 
 1. Navigate to "Task Breakdown"
 2. Enter story key(s) and epic key
-3. Click "Generate Tasks"
-4. Review, edit, add, or remove tasks
-5. Click "Preview All" → "Create All in JIRA"
+3. Optionally enable "Run in background" for large task batches
+4. Click "Generate Tasks"
+5. Review, edit, add, or remove tasks
+6. Click "Create All in JIRA" to bulk create all tasks
+   - Uses efficient bulk creation endpoint
+   - Supports async mode for large batches
+   - Automatically updates task state with created JIRA keys
 
 ### Story Coverage Analysis
 
 1. Navigate to "Story Coverage"
 2. Enter story key
-3. Optionally include test cases
-4. Enable "Run in background" for long analyses
-5. Click "Analyze Coverage"
-6. Review gaps and suggestions
-7. Apply updates or create new tasks
+3. Optionally provide additional context (concerns, constraints, or focus areas)
+4. Optionally include test cases
+5. Enable "Run in background" for long analyses
+6. Click "Analyze Coverage"
+7. Review gaps and suggestions
+8. Apply updates or create new tasks
 
 ### PRD Story Sync
 
@@ -115,17 +120,25 @@ Your credentials will be stored in browser localStorage for future sessions.
 4. Choose existing ticket action (skip/update/error)
 5. Enable "Run in background" for large PRDs
 6. Click "Sync Stories from PRD"
-7. Review generated stories
-8. Toggle "Preview mode" off and sync again to create tickets
+7. Review generated stories with metadata badges:
+   - **JIRA Key**: Clickable link to open ticket in JIRA
+   - **Ticket Source**: Shows where ticket was found (PRD/JIRA/New)
+   - **Action Taken**: Indicates if ticket was created/updated/skipped
+   - **Synced Badge**: Shows if ticket was updated during sync
+8. Edit stories individually or use bulk operations:
+   - Click edit icon to modify story details
+   - When saving, choose to sync changes to JIRA if story exists
+   - Use "Bulk Update" button to update all stories with JIRA keys at once
+9. Create new stories or toggle "Preview mode" off and sync again to create tickets
 
 ## Background Jobs
 
 For long-running operations, enable "Run in background":
 
 - **Single Ticket Generation** - Complex tickets
-- **Task Breakdown** - Multiple stories
+- **Task Breakdown** - Multiple stories or large task batches (bulk creation)
 - **Story Coverage Analysis** - Stories with many tasks
-- **PRD Story Sync** - Large PRD documents
+- **PRD Story Sync** - Large PRD documents or bulk story creation
 
 When enabled:
 - Operation starts immediately

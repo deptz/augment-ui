@@ -25,6 +25,21 @@
           />
         </div>
 
+        <!-- Additional Context Input -->
+        <div>
+          <label for="additional-context" class="block text-sm font-medium text-gray-700">
+            Additional Context (Optional)
+          </label>
+          <textarea
+            id="additional-context"
+            v-model="additionalContext"
+            rows="4"
+            placeholder="Provide any additional context, concerns, constraints, or focus areas for the analysis..."
+            class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+          />
+          <p class="mt-1 text-xs text-gray-500">Optional: Add specific concerns, constraints, or focus areas to consider in the analysis</p>
+        </div>
+
         <!-- Options -->
         <div class="space-y-3">
           <div class="flex items-center">
@@ -235,7 +250,7 @@
     <PromptResubmitModal
       v-if="showABTestModal"
       operation-type="analyze_coverage"
-      :original-request="{ story_key: storyKey }"
+      :original-request="{ story_key: storyKey, additional_context: additionalContext || undefined }"
       :original-system-prompt="response?.system_prompt"
       :original-user-prompt="response?.user_prompt || ''"
       :original-result="response"
@@ -281,6 +296,7 @@ const modelsStore = useModelsStore();
 const uiStore = useUIStore();
 
 const storyKey = ref('');
+const additionalContext = ref('');
 const includeTestCases = ref(true);
 const asyncMode = ref(true);
 const loading = ref(false);
@@ -328,6 +344,7 @@ async function handleAnalyze() {
       include_test_cases: includeTestCases.value,
       llm_provider: modelsStore.selectedProvider || undefined,
       llm_model: modelsStore.selectedModel || undefined,
+      additional_context: additionalContext.value || undefined,
       async_mode: asyncMode.value,
     });
 

@@ -28,6 +28,7 @@ export interface TicketResponse {
 }
 
 export interface TaskDetail {
+  task_id?: string | null; // Temporary task ID (UUID) for dependency resolution before JIRA creation
   summary: string;
   description: string;
   team: string;

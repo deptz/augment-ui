@@ -101,14 +101,24 @@
             <label for="edit-dependencies" class="block text-sm font-medium text-gray-700">
               Dependencies
             </label>
-            <input
+            <select
               id="edit-dependencies"
-              v-model="dependenciesText"
-              type="text"
+              v-model="selectedDependencies"
+              multiple
               class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-              placeholder="TASK-123, TASK-124 (comma-separated)"
-            />
-            <p class="mt-1 text-xs text-gray-500">Enter task keys separated by commas</p>
+              size="5"
+            >
+              <option
+                v-for="taskOption in availableDependencyOptions"
+                :key="taskOption.value"
+                :value="taskOption.value"
+              >
+                {{ taskOption.label }}
+              </option>
+            </select>
+            <p class="mt-1 text-xs text-gray-500">
+              Select tasks this task depends on (hold Ctrl/Cmd to select multiple)
+            </p>
           </div>
 
           <!-- Test Cases Section -->
@@ -203,6 +213,7 @@ const props = defineProps<{
   taskIndex?: number;
   parentKey?: string;
   defaultStoryKey?: string;
+  allTasks?: TaskDetail[];
 }>();
 
 const emit = defineEmits<{
@@ -214,6 +225,7 @@ const isNewTask = computed(() => props.task === undefined || props.taskIndex ===
 
 // Create a deep copy of the task for editing, or create a new task
 const editedTask = ref<TaskDetail>(props.task ? {
+  task_id: props.task.task_id,
   summary: props.task.summary,
   description: props.task.description || '',
   team: props.task.team,
@@ -231,14 +243,46 @@ const editedTask = ref<TaskDetail>(props.task ? {
   story_key: props.defaultStoryKey || '',
 });
 
-// Computed properties for comma-separated input fields
-const dependenciesText = computed({
-  get: () => editedTask.value.depends_on_tasks.join(', '),
-  set: (value: string) => {
-    editedTask.value.depends_on_tasks = value
-      .split(',')
-      .map(t => t.trim())
-      .filter(t => t.length > 0);
+// Computed property for available dependency options (excluding current task)
+const availableDependencyOptions = computed(() => {
+  if (!props.allTasks || props.allTasks.length === 0) {
+    return [];
+  }
+  
+  return props.allTasks
+    .filter((task, index) => {
+      // Exclude current task being edited (if editing existing task)
+      if (props.taskIndex !== undefined && props.taskIndex !== null) {
+        return index !== props.taskIndex;
+      }
+      // If creating new task, include all tasks
+      return true;
+    })
+    .map(task => ({
+      value: task.task_id || task.summary, // Use task_id if available, fallback to summary
+      label: task.summary,
+    }));
+});
+
+// Computed property for selected dependencies (multi-select)
+const selectedDependencies = computed({
+  get: () => {
+    // Map depends_on_tasks to their corresponding values (task_id or summary)
+    return editedTask.value.depends_on_tasks.map(dep => {
+      // If dep is already a task_id or summary that matches, return it
+      // Otherwise, try to find matching task
+      if (props.allTasks) {
+        const matchingTask = props.allTasks.find(t => 
+          t.task_id === dep || t.summary === dep
+        );
+        return matchingTask ? (matchingTask.task_id || matchingTask.summary) : dep;
+      }
+      return dep;
+    });
+  },
+  set: (values: string[]) => {
+    // Store the selected values (task_id preferred, summary as fallback)
+    editedTask.value.depends_on_tasks = values;
   },
 });
 
@@ -290,6 +334,7 @@ function handleSave() {
 watch(() => props.task, (newTask) => {
   if (newTask) {
     editedTask.value = {
+      task_id: newTask.task_id,
       summary: newTask.summary,
       description: newTask.description || '',
       team: newTask.team,

@@ -7,7 +7,7 @@ A Vue.js 3 frontend application for the [Augment](https://github.com/deptz/augme
 ## ✨ Features
 
 - **Single Ticket Backfill** - Generate AI-powered descriptions for individual JIRA tickets
-- **Task Breakdown** - Break down stories into detailed, actionable tasks
+- **Task Breakdown** - Break down stories into detailed, actionable tasks with dependency management
 - **Story Coverage Analysis** - Analyze how well tasks cover story requirements and identify gaps
 - **PRD Story Sync** - Sync story tickets from PRD documents to JIRA
 - **A/B Testing** - Compare different prompts and models to optimize generation quality
@@ -83,10 +83,19 @@ All features follow a consistent preview-first workflow:
 ### Feature Guides
 
 - **Single Ticket Backfill** - Navigate to "Single Ticket", enter ticket key, generate, review, and commit
-- **Task Breakdown** - Navigate to "Task Breakdown", enter story/epic keys, generate tasks, review/edit, and bulk create
+- **Task Breakdown** - Navigate to "Task Breakdown", enter story/epic keys, generate tasks, review/edit dependencies using the dropdown selector, and bulk create. Dependencies are automatically resolved using task IDs when available.
 - **Story Coverage Analysis** - Navigate to "Story Coverage", analyze a story, review gaps and suggestions, apply updates
 - **PRD Story Sync** - Navigate to "PRD Story Sync", enter epic key or PRD URL, review generated stories, sync to JIRA
 - **Background Jobs** - Navigate to "Jobs" to monitor and manage long-running operations
+
+#### Task Dependency Management
+
+When working with Task Breakdown, you can manage task dependencies through an intuitive dropdown interface:
+
+- **Dependency Selection**: Use the multi-select dropdown to choose which tasks the current task depends on
+- **Automatic Resolution**: The system automatically uses task IDs (when available) for accurate dependency tracking, falling back to task summaries when needed
+- **Real-time Updates**: Dependency options update automatically when task summaries are modified
+- **JIRA Integration**: When creating tasks in JIRA, dependencies are resolved to JIRA ticket keys for already-created tasks, ensuring proper linking
 
 For detailed usage instructions, see [QUICK_START.md](QUICK_START.md).
 

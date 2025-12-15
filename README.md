@@ -107,6 +107,13 @@ When working with Task Breakdown, you can efficiently manage and create tasks:
 
 The PRD Story Sync feature includes advanced capabilities for managing stories:
 
+- **UUID-Based Row Matching**: Ensures exact PRD table row matching when creating stories
+  - UUIDs are generated during dry run/preview mode for each story
+  - UUIDs are automatically preserved and passed when creating stories in JIRA
+  - Enables precise matching instead of fuzzy matching, preventing incorrect row associations
+  - UUID badge displayed in story cards for transparency and debugging
+  - Click-to-copy UUID functionality when story has a JIRA key
+
 - **Existing Ticket Detection**: Automatically detects existing JIRA tickets linked in PRD documents
   - Shows ticket source (PRD table, JIRA API, or newly created)
   - Displays action taken (created, updated, or skipped)
@@ -120,6 +127,7 @@ The PRD Story Sync feature includes advanced capabilities for managing stories:
 
 - **Story Editing & Sync**:
   - Edit stories locally with full test case support
+  - UUIDs are preserved when editing stories
   - When editing existing stories with JIRA keys, option to sync changes back to JIRA
   - Automatic confirmation prompts for JIRA updates
 

@@ -122,6 +122,7 @@ Your credentials will be stored in browser localStorage for future sessions.
 6. Click "Sync Stories from PRD"
 7. Review generated stories with metadata badges:
    - **JIRA Key**: Clickable link to open ticket in JIRA
+   - **UUID Badge**: Shows PRD row UUID for exact row matching (clickable to copy when JIRA key exists)
    - **Ticket Source**: Shows where ticket was found (PRD/JIRA/New)
    - **Action Taken**: Indicates if ticket was created/updated/skipped
    - **Synced Badge**: Shows if ticket was updated during sync

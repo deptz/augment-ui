@@ -238,6 +238,20 @@
                     Synced
                   </span>
                 </div>
+                <!-- PRD Row UUID (for debugging/transparency) - shown independently of JIRA key -->
+                <span
+                  v-if="story.prd_row_uuid"
+                  :class="[
+                    'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium font-mono',
+                    story.jira_key 
+                      ? 'bg-gray-100 text-gray-600 cursor-pointer hover:bg-gray-200 transition-colors' 
+                      : 'bg-gray-100 text-gray-600'
+                  ]"
+                  :title="`PRD Row UUID: ${story.prd_row_uuid}${story.jira_key ? ' (click to copy)' : ''}`"
+                  @click="story.jira_key ? handleCopyUuid(story.prd_row_uuid!) : undefined"
+                >
+                  UUID
+                </span>
                 <button
                   v-if="!story.jira_key"
                   @click="handleCreateStory(index)"
@@ -440,7 +454,7 @@
 <script setup lang="ts">
 import { ref, computed, nextTick } from 'vue';
 import { useUIStore } from '../stores/ui';
-import { syncStoriesFromPRD, getJobStatus, updateStoryTicket, bulkUpdateStories, bulkCreateStories } from '../api/endpoints';
+import { syncStoriesFromPRD, getJobStatus, updateStoryTicket, bulkUpdateStories, bulkCreateStories, createStoryTicket } from '../api/endpoints';
 import type { PRDStorySyncResponse, BatchResponse, StoryDetail, StoryUpdateItem, BulkUpdateStoriesResponse, BulkCreateStoriesResponse } from '../types/api';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import PromptViewer from '../components/PromptViewer.vue';
@@ -830,6 +844,7 @@ async function handleCreateStory(index: number) {
       summary: story.summary,
       description: description,
       test_cases: testCasesText,
+      prd_row_uuid: story.prd_row_uuid || undefined,
       create_ticket: true,
     });
 
@@ -885,6 +900,7 @@ async function handleCreateAll() {
         summary: story.summary,
         description: story.description || '',
         test_cases: testCasesText,
+        prd_row_uuid: story.prd_row_uuid || undefined,
       };
     });
 
@@ -1043,6 +1059,28 @@ function getTicketSourceTooltip(source: string): string {
       return 'Newly created';
     default:
       return source;
+  }
+}
+
+async function handleCopyUuid(uuid: string) {
+  try {
+    await navigator.clipboard.writeText(uuid);
+    uiStore.showSuccess('UUID copied to clipboard');
+  } catch (error) {
+    // Fallback for older browsers
+    const textArea = document.createElement('textarea');
+    textArea.value = uuid;
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand('copy');
+      uiStore.showSuccess('UUID copied to clipboard');
+    } catch (err) {
+      uiStore.showError('Failed to copy UUID');
+    }
+    document.body.removeChild(textArea);
   }
 }
 </script>

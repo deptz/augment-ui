@@ -160,6 +160,7 @@ const editedStory = ref<StoryDetail>(props.story ? {
   test_cases: props.story.test_cases ? props.story.test_cases.map(tc => ({ ...tc })) : [],
   tasks: props.story.tasks ? props.story.tasks.map(t => ({ ...t })) : [],
   jira_key: props.story.jira_key,
+  prd_row_uuid: props.story.prd_row_uuid,
 } : {
   summary: '',
   description: '',
@@ -167,6 +168,7 @@ const editedStory = ref<StoryDetail>(props.story ? {
   test_cases: [],
   tasks: [],
   jira_key: null,
+  prd_row_uuid: null,
 });
 
 function addTestCase() {
@@ -212,6 +214,7 @@ watch(() => props.story, (newStory) => {
       test_cases: newStory.test_cases ? newStory.test_cases.map(tc => ({ ...tc })) : [],
       tasks: newStory.tasks ? newStory.tasks.map(t => ({ ...t })) : [],
       jira_key: newStory.jira_key,
+      prd_row_uuid: newStory.prd_row_uuid,
     };
   }
 }, { deep: true });

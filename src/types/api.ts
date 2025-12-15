@@ -214,6 +214,7 @@ export interface CreateStoryTicketRequest {
   summary: string;
   description: string;
   test_cases?: string | null;
+  prd_row_uuid?: string | null;
   create_ticket: boolean;
 }
 
@@ -299,6 +300,7 @@ export interface StoryDetail {
   ticket_source?: 'prd_table' | 'jira_api' | 'newly_created' | null;
   action_taken?: 'created' | 'updated' | 'skipped' | null;
   was_updated?: boolean | null;
+  prd_row_uuid?: string | null;
 }
 
 export interface PRDStorySyncResponse {
@@ -543,6 +545,7 @@ export interface BulkCreateStoryItem {
   summary: string;
   description: string;
   test_cases?: string | null;
+  prd_row_uuid?: string | null;
 }
 
 export interface BulkCreateStoriesRequest {

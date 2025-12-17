@@ -1,0 +1,65 @@
+# ------------------------------------------------------------------
+# Mirrors .gitignore so Docker build context matches git-ignored files
+# ------------------------------------------------------------------
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Test coverage
+coverage
+.nyc_output
+open_api_spec.json
+
+# ------------------------------------------------------------------
+# Additional Docker-specific ignores
+# ------------------------------------------------------------------
+
+# Git / VCS
+.git
+.gitignore
+
+# Node / tooling caches
+npm-cache
+pnpm-store
+yarn.lock
+
+# Build / test artifacts
+dist-ssr
+*.tsbuildinfo
+
+# Tests (not needed in runtime image)
+tests
+vitest.config.ts
+
+# Docker files themselves (not needed inside image)
+Dockerfile
+.dockerignore
+
+

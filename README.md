@@ -212,6 +212,43 @@ npm run preview
 
 The built files will be in the `dist/` directory.
 
+## 🐳 Docker
+
+### Run from Docker Hub
+
+You can run **Augment UI** directly from a published Docker image without installing Node.js:
+
+```bash
+# Run a specific version
+docker run --rm -p 8080:80 pujitriwibowo/augment-ui:0.1.0
+
+# Or use the latest tag
+docker run --rm -p 8080:80 pujitriwibowo/augment-ui:latest
+```
+
+Then open `http://localhost:8080` in your browser.
+
+> **Note on environment:** This is a static SPA built with [Vite](https://vite.dev/), so all `VITE_*` variables (like `VITE_API_BASE_URL`) are **baked in at build time**, not read at container runtime.  
+> The images on Docker Hub are built with `VITE_API_BASE_URL=http://localhost:8000`, which means the UI in your browser will call the Augment API at `http://localhost:8000`.
+
+Make sure your Augment backend is reachable at that URL from the user’s browser (for local dev, run the backend on your machine at `http://localhost:8000`).
+
+#### Custom environment for your own image
+
+All frontend configuration lives in `VITE_*` variables (see `env.example`). To build an image that talks to a different Augment API URL or uses different defaults, pass build-time arguments:
+
+```bash
+docker build \
+  --build-arg VITE_API_BASE_URL=https://augment-api.yourdomain.com \
+  --build-arg VITE_ENVIRONMENT=production \
+  --build-arg VITE_DEFAULT_LLM_PROVIDER=openai \
+  --build-arg VITE_DEFAULT_LLM_MODEL=gpt-4o \
+  -t your-org/augment-ui:custom .
+```
+
+These values are wired into the built static assets; setting `-e VITE_API_BASE_URL=...` on `docker run` **will not** change them at runtime.
+
+
 ## 🛠️ Technology Stack
 
 - **Vue 3** - Progressive JavaScript framework

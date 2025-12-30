@@ -10,21 +10,21 @@
     <!-- Input Form -->
     <div class="bg-white shadow-sm rounded-lg p-6 mb-6">
       <div class="space-y-6">
-        <!-- Story Keys Input -->
+        <!-- Story Key Input -->
         <div>
-          <label for="story-keys" class="block text-sm font-medium text-gray-700">
-            Story Key(s)
+          <label for="story-key" class="block text-sm font-medium text-gray-700">
+            Story Key
           </label>
           <input
-            id="story-keys"
-            name="story-keys"
-            v-model="storyKeys"
+            id="story-key"
+            name="story-key"
+            v-model="storyKey"
             type="text"
             autocomplete="on"
-            placeholder="e.g., STORY-123 or STORY-123,STORY-124"
+            placeholder="e.g., STORY-123"
+            @blur="storyKey = storyKey.trim()"
             class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
           />
-          <p class="mt-1 text-xs text-gray-500">Separate multiple keys with commas</p>
         </div>
 
         <!-- Epic Key Input -->
@@ -39,6 +39,7 @@
             type="text"
             autocomplete="on"
             placeholder="e.g., EPIC-100"
+            @blur="epicKey = epicKey.trim()"
             class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
           />
         </div>
@@ -90,7 +91,7 @@
         <div>
           <button
             @click="handleGenerate"
-            :disabled="!storyKeys || !epicKey || loading"
+            :disabled="!storyKey.trim() || !epicKey.trim() || loading"
             class="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             <LoadingSpinner v-if="loading" size="sm" color="white" class="mr-2" />
@@ -257,8 +258,8 @@
       v-if="showABTestModal"
       operation-type="plan_tasks"
       :original-request="{
-        story_keys: storyKeys ? storyKeys.split(',').map(s => s.trim()).filter(s => s) : [],
-        epic_key: epicKey,
+        story_keys: storyKey ? [storyKey.trim()] : [],
+        epic_key: epicKey.trim(),
         additional_context: additionalContext || undefined
       }"
       :original-system-prompt="response?.system_prompt"
@@ -272,8 +273,8 @@
     <TaskPreviewModal
       v-if="showPreviewModal"
       :tasks="tasks"
-      :epic-key="epicKey"
-      :story-keys="storyKeys ? storyKeys.split(',').map(s => s.trim()).filter(s => s) : []"
+      :epic-key="epicKey.trim()"
+      :story-keys="storyKey ? [storyKey.trim()] : []"
       @close="handleClosePreview"
       @create="handleCreateFromPreview"
     />
@@ -283,8 +284,8 @@
       v-if="showEditModal"
       :task="editingTaskIndex !== null ? tasks[editingTaskIndex] : undefined"
       :task-index="editingTaskIndex ?? undefined"
-      :parent-key="epicKey"
-      :default-story-key="getFirstStoryKey()"
+      :parent-key="epicKey.trim()"
+      :default-story-key="getStoryKey()"
       :all-tasks="tasks"
       @close="handleCloseEdit"
       @save="handleSaveTask"
@@ -311,7 +312,7 @@ import { isAsyncResponse, handleDuplicateJob } from '../utils/jobHelpers';
 const modelsStore = useModelsStore();
 const uiStore = useUIStore();
 
-const storyKeys = ref('');
+const storyKey = ref('');
 const epicKey = ref('');
 const additionalContext = ref('');
 const generateTestCases = ref(false);
@@ -358,11 +359,10 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
         // The results should contain the TaskGenerationResponse
         response.value = job.results as TaskGenerationResponse;
         if (response.value.success) {
-          const keys = storyKeys.value.split(',').map(k => k.trim()).filter(k => k);
-          const firstStory = keys.length > 0 ? keys[0] : '';
+          const story = storyKey.value.trim();
           tasks.value = (response.value.task_details || []).map(task => ({
             ...task,
-            story_key: task.story_key || firstStory,
+            story_key: task.story_key || story,
           }));
           uiStore.showSuccess(`Generated ${tasks.value.length} tasks`);
         }
@@ -403,8 +403,10 @@ const {
 });
 
 async function handleGenerate() {
-  if (!storyKeys.value || !epicKey.value) {
-    uiStore.showError('Please enter both story key(s) and epic key');
+  const trimmedStoryKey = storyKey.value.trim();
+  const trimmedEpicKey = epicKey.value.trim();
+  if (!trimmedStoryKey || !trimmedEpicKey) {
+    uiStore.showError('Please enter both story key and epic key');
     return;
   }
 
@@ -413,10 +415,10 @@ async function handleGenerate() {
   tasks.value = [];
 
   try {
-    const keys = storyKeys.value.split(',').map(k => k.trim()).filter(k => k);
+    const story = trimmedStoryKey;
     const result = await generateTasks({
-      story_keys: keys,
-      epic_key: epicKey.value,
+      story_keys: [story],
+      epic_key: trimmedEpicKey,
       llm_provider: modelsStore.selectedProvider || undefined,
       llm_model: modelsStore.selectedModel || undefined,
       additional_context: additionalContext.value || undefined,
@@ -433,11 +435,10 @@ async function handleGenerate() {
     } else if (result.success) {
       // Synchronous response
       response.value = result as TaskGenerationResponse;
-      // Set story_key for all generated tasks (use first story)
-      const firstStory = keys.length > 0 ? keys[0] : '';
+      // Set story_key for all generated tasks
       tasks.value = (result.task_details || []).map(task => ({
         ...task,
-        story_key: task.story_key || firstStory,
+        story_key: task.story_key || story,
       }));
       
       uiStore.showSuccess(`Generated ${tasks.value.length} tasks`);
@@ -455,8 +456,8 @@ async function handleGenerate() {
 }
 
 function handleAddTask() {
-  if (!epicKey.value || !storyKeys.value) {
-    uiStore.showError('Please enter epic key and story keys before adding tasks');
+  if (!epicKey.value.trim() || !storyKey.value.trim()) {
+    uiStore.showError('Please enter epic key and story key before adding tasks');
     return;
   }
   editingTaskIndex.value = null;
@@ -486,10 +487,8 @@ function handleSaveTask(updatedTask: TaskDetail, index?: number) {
   handleCloseEdit();
 }
 
-function getFirstStoryKey(): string {
-  if (!storyKeys.value) return '';
-  const keys = storyKeys.value.split(',').map(k => k.trim()).filter(k => k);
-  return keys.length > 0 ? keys[0] : '';
+function getStoryKey(): string {
+  return storyKey.value.trim();
 }
 
 // Helper to get task summary by task_id or fallback to the ID itself
@@ -545,14 +544,15 @@ async function handleCreateAll() {
     return;
   }
 
-  if (!epicKey.value) {
+  const trimmedEpicKey = epicKey.value.trim();
+  if (!trimmedEpicKey) {
     uiStore.showError('Epic key is required');
     return;
   }
 
-  const firstStoryKey = getFirstStoryKey();
-  if (!firstStoryKey) {
-    uiStore.showError('At least one story key is required');
+  const story = getStoryKey();
+  if (!story) {
+    uiStore.showError('Story key is required');
     return;
   }
 
@@ -571,10 +571,10 @@ async function handleCreateAll() {
 
       return {
         task_id: task.task_id || null, // Include for dependency resolution in backend
-        parent_key: epicKey.value,
+        parent_key: trimmedEpicKey,
         summary: task.summary,
         description: task.description || '',
-        story_key: task.story_key || firstStoryKey,
+        story_key: task.story_key || story,
         test_cases: testCasesText,
         mandays: task.estimated_days,
         blocks: task.depends_on_tasks.length > 0 ? task.depends_on_tasks : null,
@@ -661,11 +661,10 @@ async function refreshJob() {
       if (job.status === 'completed' && job.results) {
         response.value = job.results as TaskGenerationResponse;
         if (response.value.success) {
-          const keys = storyKeys.value.split(',').map(k => k.trim()).filter(k => k);
-          const firstStory = keys.length > 0 ? keys[0] : '';
+          const story = storyKey.value.trim();
           tasks.value = (response.value.task_details || []).map(task => ({
             ...task,
-            story_key: task.story_key || firstStory,
+            story_key: task.story_key || story,
           }));
         }
         jobId.value = null;
@@ -680,11 +679,10 @@ function handleViewJobResults() {
   if (jobStatus.value?.results) {
     response.value = jobStatus.value.results as TaskGenerationResponse;
     if (response.value.success) {
-      const keys = storyKeys.value.split(',').map(k => k.trim()).filter(k => k);
-      const firstStory = keys.length > 0 ? keys[0] : '';
+      const story = storyKey.value.trim();
       tasks.value = (response.value.task_details || []).map(task => ({
         ...task,
-        story_key: task.story_key || firstStory,
+        story_key: task.story_key || story,
       }));
     }
     jobId.value = null;

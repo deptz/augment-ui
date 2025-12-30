@@ -20,6 +20,7 @@
             v-model="storyKey"
             type="text"
             placeholder="e.g., STORY-123"
+            @blur="storyKey = storyKey.trim()"
             class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
             @keyup.enter="handleAnalyze"
           />
@@ -70,7 +71,7 @@
         <div>
           <button
             @click="handleAnalyze"
-            :disabled="!storyKey || loading"
+            :disabled="!storyKey.trim() || loading"
             class="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             <LoadingSpinner v-if="loading" size="sm" color="white" class="mr-2" />
@@ -251,7 +252,7 @@
     <PromptResubmitModal
       v-if="showABTestModal"
       operation-type="analyze_coverage"
-      :original-request="{ story_key: storyKey, additional_context: additionalContext || undefined }"
+      :original-request="{ story_key: storyKey.trim(), additional_context: additionalContext || undefined }"
       :original-system-prompt="response?.system_prompt"
       :original-user-prompt="response?.user_prompt || ''"
       :original-result="response"
@@ -368,7 +369,8 @@ onMounted(async () => {
 });
 
 async function handleAnalyze() {
-  if (!storyKey.value) {
+  const trimmedStoryKey = storyKey.value.trim();
+  if (!trimmedStoryKey) {
     uiStore.showError('Please enter a story key');
     return;
   }
@@ -381,7 +383,7 @@ async function handleAnalyze() {
 
   try {
     const result = await analyzeStoryCoverage({
-      story_key: storyKey.value,
+      story_key: trimmedStoryKey,
       include_test_cases: includeTestCases.value,
       llm_provider: modelsStore.selectedProvider || undefined,
       llm_model: modelsStore.selectedModel || undefined,

@@ -20,6 +20,7 @@
             v-model="ticketKey"
             type="text"
             placeholder="e.g., PROJ-123"
+            @blur="ticketKey = ticketKey.trim()"
             class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
             @keyup.enter="handleGenerate"
           />
@@ -57,7 +58,7 @@
         <div>
           <button
             @click="handleGenerate"
-            :disabled="!ticketKey || loading"
+            :disabled="!ticketKey.trim() || loading"
             class="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             <LoadingSpinner v-if="loading" size="sm" color="white" class="mr-2" />
@@ -181,7 +182,7 @@
     <PromptResubmitModal
       v-if="showABTestModal"
       operation-type="generate_single"
-      :original-request="{ ticket_key: ticketKey }"
+      :original-request="{ ticket_key: ticketKey.trim() }"
       :original-system-prompt="response?.system_prompt"
       :original-user-prompt="response?.user_prompt || ''"
       :original-result="response"
@@ -281,7 +282,8 @@ onMounted(async () => {
 });
 
 async function handleGenerate() {
-  if (!ticketKey.value) {
+  const trimmedTicketKey = ticketKey.value.trim();
+  if (!trimmedTicketKey) {
     uiStore.showError('Please enter a ticket key');
     return;
   }
@@ -295,7 +297,7 @@ async function handleGenerate() {
 
   try {
     const result = await generateSingle({
-      ticket_key: ticketKey.value,
+      ticket_key: trimmedTicketKey,
       llm_provider: modelsStore.selectedProvider || undefined,
       llm_model: modelsStore.selectedModel || undefined,
       additional_context: additionalContext.value || undefined,

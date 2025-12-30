@@ -20,12 +20,13 @@
         <button
           v-if="canCancel"
           @click="$emit('cancel')"
-          class="inline-flex items-center px-3 py-1 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50"
+          :disabled="isCancelling"
+          class="inline-flex items-center px-3 py-1 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-300 disabled:cursor-not-allowed"
         >
           <svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
           </svg>
-          Cancel
+          {{ isCancelling ? 'Cancelling...' : 'Cancel' }}
         </button>
         <button
           @click="$emit('refresh')"
@@ -112,6 +113,7 @@ import type { JobStatus } from '../types/api';
 const props = defineProps<{
   job: JobStatus | null;
   isLoading?: boolean;
+  isCancelling?: boolean;
 }>();
 
 defineEmits<{
@@ -201,7 +203,13 @@ const progressBarClass = computed(() => {
 function formatDate(dateString: string): string {
   try {
     const date = new Date(dateString);
-    return date.toLocaleString();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   } catch {
     return dateString;
   }

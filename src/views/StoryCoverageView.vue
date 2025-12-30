@@ -85,6 +85,7 @@
       <JobStatusCard
         :job="jobStatus"
         :is-loading="isPolling"
+        :is-cancelling="isCancelling"
         @cancel="handleCancelJob"
         @refresh="refreshJob"
         @view-results="handleViewJobResults"
@@ -278,7 +279,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useModelsStore } from '../stores/models';
 import { useUIStore } from '../stores/ui';
 import { analyzeStoryCoverage, updateJiraTicket, createTaskFromSuggestion, getJobStatus } from '../api/endpoints';
@@ -290,6 +291,7 @@ import TaskUpdateComparisonModal from '../components/TaskUpdateComparisonModal.v
 import NewTaskPreviewModal from '../components/NewTaskPreviewModal.vue';
 import JobStatusCard from '../components/JobStatusCard.vue';
 import { useJobPolling } from '../composables/useJobPolling';
+import { useJobUrl } from '../composables/useJobUrl';
 import { error } from '../utils/logger';
 
 const modelsStore = useModelsStore();
@@ -305,10 +307,12 @@ const showABTestModal = ref(false);
 const selectedSuggestion = ref<UpdateSuggestion | null>(null);
 const showNewTaskPreviewModal = ref(false);
 const previewingNewTask = ref<NewTaskSuggestion | null>(null);
-const jobId = ref<string | null>(null);
+
+// Use useJobUrl for job ID management
+const { jobId, setJobId: setJobIdInUrl, removeFromUrl: removeJobIdFromUrl } = useJobUrl('jobId');
 
 // Job polling
-const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } = useJobPolling(
+const { job: jobStatus, isPolling, isCancelling, startPolling, cancelJob: cancelJobPolling } = useJobPolling(
   jobId,
   {
     onComplete: async (job) => {
@@ -319,7 +323,10 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
         if (response.value.success) {
           uiStore.showSuccess(`Analysis complete: ${response.value.coverage_percentage.toFixed(0)}% coverage`);
         }
-        jobId.value = null; // Clear job ID to hide status card
+        // Don't clear job ID from URL - keep it for reference
+        // Only clear the local ref to hide status card
+        // Note: Form fields (storyKey, additionalContext, etc.) are preserved and NOT cleared
+        jobId.value = null;
       }
     },
     onError: (error) => {
@@ -328,15 +335,49 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
   }
 );
 
+// Restore job from URL on mount
+onMounted(async () => {
+  if (jobId.value) {
+    try {
+      const job = await getJobStatus(jobId.value);
+      if (['started', 'processing'].includes(job.status)) {
+        // Job is still active, start polling
+        startPolling();
+      } else if (job.status === 'completed' && job.results) {
+        // Job is completed, restore results
+        response.value = job.results as StoryCoverageResponse;
+        if (response.value.success) {
+          uiStore.showSuccess(`Analysis complete: ${response.value.coverage_percentage.toFixed(0)}% coverage`);
+        }
+        // Clear local ref to hide status card, but keep in URL
+        // Note: Form fields (storyKey, additionalContext, etc.) are preserved and NOT cleared
+        jobId.value = null;
+      } else if (job.status === 'failed') {
+        uiStore.showError(`Job failed: ${job.error || 'Unknown error'}`);
+        jobId.value = null;
+      } else if (job.status === 'cancelled') {
+        uiStore.showInfo('Job was cancelled');
+        jobId.value = null;
+      }
+    } catch (err: any) {
+      error('Error restoring job from URL:', err);
+      uiStore.showError('Failed to restore job from URL');
+      removeJobIdFromUrl();
+    }
+  }
+});
+
 async function handleAnalyze() {
   if (!storyKey.value) {
     uiStore.showError('Please enter a story key');
     return;
   }
 
+  // Clear job ID from URL before starting new analysis
+  removeJobIdFromUrl();
+
   loading.value = true;
   response.value = null;
-  jobId.value = null;
 
   try {
     const result = await analyzeStoryCoverage({
@@ -352,7 +393,7 @@ async function handleAnalyze() {
     // BatchResponse has job_id property, StoryCoverageResponse has success property
     if (result && typeof result === 'object' && 'job_id' in result) {
       const batchResponse = result as BatchResponse;
-      jobId.value = batchResponse.job_id;
+      setJobIdInUrl(batchResponse.job_id);
       uiStore.showInfo(`Job started: ${batchResponse.job_id}`);
       startPolling();
     } else if (result && typeof result === 'object' && 'success' in result && (result as StoryCoverageResponse).success) {
@@ -518,9 +559,18 @@ function truncate(text: string, length: number): string {
 }
 
 async function handleCancelJob() {
-  if (jobId.value) {
+  if (!jobId.value) {
+    return;
+  }
+  
+  try {
     await cancelJobPolling();
-    jobId.value = null;
+    // Only remove from URL if cancel was successful
+    // The cancelJobPolling function handles the API call, status checks, and status updates
+    removeJobIdFromUrl();
+  } catch (err: any) {
+    // Error is already handled in cancelJobPolling, but we don't remove from URL on error
+    error('Error cancelling job:', err);
   }
 }
 

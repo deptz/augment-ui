@@ -19,6 +19,7 @@ export function useJobPolling(jobId: Ref<string | null>, options: UseJobPollingO
   const isLoading = ref(false);
   const error = ref<Error | null>(null);
   const isPolling = ref(false);
+  const isCancelling = ref(false);
   
   const {
     interval = 3000, // Default 3 seconds
@@ -78,6 +79,8 @@ export function useJobPolling(jobId: Ref<string | null>, options: UseJobPollingO
           }
         } else if (jobStatus.status === 'cancelled') {
           uiStore.showInfo('Job cancelled');
+          // Reset cancelling state when job is confirmed cancelled
+          isCancelling.value = false;
         }
       }
 
@@ -151,25 +154,39 @@ export function useJobPolling(jobId: Ref<string | null>, options: UseJobPollingO
   };
 
   const handleCancel = async () => {
-    if (!jobId.value || !job.value) {
+    if (!jobId.value) {
+      warn('Cannot cancel: job_id is null');
       return;
     }
 
-    // Only allow cancellation of active jobs
-    if (!['started', 'processing'].includes(job.value.status)) {
-      uiStore.showWarning('Job cannot be cancelled in its current state');
-      return;
+    // If we have job status, check if it's cancellable
+    if (job.value) {
+      // Only allow cancellation of active jobs
+      if (!['started', 'processing'].includes(job.value.status)) {
+        uiStore.showWarning('Job cannot be cancelled in its current state');
+        return;
+      }
     }
+    // If job.value is null (e.g., polling hasn't completed yet), we still try to cancel
+    // The API will handle the validation
+
+    // Set cancelling state and disable button
+    isCancelling.value = true;
 
     try {
       await cancelJob(jobId.value);
       stopPolling();
-      uiStore.showInfo('Job cancellation requested');
-      // Poll once more to get updated status
-      await poll();
+      uiStore.showInfo('Cancellation request sent');
+      // Poll once more to get updated status (if we have job data)
+      if (job.value) {
+        await poll();
+      }
     } catch (err: any) {
+      // Reset cancelling state on error so user can try again
+      isCancelling.value = false;
       uiStore.showError(err.response?.data?.detail || 'Failed to cancel job');
       error('Error cancelling job:', err);
+      throw err; // Re-throw so callers can handle it
     }
   };
 
@@ -185,6 +202,7 @@ export function useJobPolling(jobId: Ref<string | null>, options: UseJobPollingO
     isLoading,
     error,
     isPolling,
+    isCancelling,
     startPolling,
     stopPolling,
     cancelJob: handleCancel,

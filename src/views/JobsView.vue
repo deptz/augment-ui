@@ -93,6 +93,7 @@
         :key="job.job_id"
         :job="job"
         :is-loading="loading"
+        :is-cancelling="cancellingJobIds.has(job.job_id)"
         @cancel="handleCancel(job.job_id)"
         @refresh="loadJobs"
         @view-results="handleViewResults(job)"
@@ -110,6 +111,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { useUIStore } from '../stores/ui';
 import { listJobs, cancelJob } from '../api/endpoints';
 import type { JobStatus, JobListParams } from '../types/api';
@@ -118,22 +120,97 @@ import JobStatusCard from '../components/JobStatusCard.vue';
 import JobResultsModal from '../components/JobResultsModal.vue';
 import { error } from '../utils/logger';
 
+const router = useRouter();
 const uiStore = useUIStore();
 const jobs = ref<JobStatus[]>([]);
 const loading = ref(false);
 const selectedJob = ref<JobStatus | null>(null);
 const showResultsModal = ref(false);
+const cancellingJobIds = ref<Set<string>>(new Set());
 const filters = ref<JobListParams>({
   status: null,
   job_type: null,
   limit: 50,
 });
 
+/**
+ * Determine the route path based on job type or results structure
+ */
+function getRouteForJob(job: JobStatus): string | null {
+  // First, try to determine from job_type
+  if (job.job_type) {
+    const jobType = job.job_type.toLowerCase();
+    
+    // Map common job types to routes
+    if (jobType.includes('task') || jobType.includes('breakdown')) {
+      return '/task-breakdown';
+    }
+    if (jobType.includes('story') || jobType.includes('prd') || jobType.includes('sync')) {
+      return '/prd-sync';
+    }
+    if (jobType.includes('coverage') || jobType.includes('analyze')) {
+      return '/story-coverage';
+    }
+    if (jobType.includes('sprint') || jobType.includes('plan')) {
+      return '/sprint-planning';
+    }
+    if (jobType.includes('single') || jobType.includes('ticket')) {
+      return '/single-ticket';
+    }
+  }
+
+  // If job_type doesn't help, try to infer from results structure
+  if (job.results && typeof job.results === 'object') {
+    const results = job.results as any;
+    
+    // Task breakdown: has task_details array
+    if (results.task_details && Array.isArray(results.task_details)) {
+      return '/task-breakdown';
+    }
+    
+    // PRD Sync: has story_details array
+    if (results.story_details && Array.isArray(results.story_details)) {
+      return '/prd-sync';
+    }
+    
+    // Story Coverage: has coverage_percentage
+    if (typeof results.coverage_percentage === 'number') {
+      return '/story-coverage';
+    }
+    
+    // Sprint Planning: has sprints or total_sprints
+    if (results.sprints || typeof results.total_sprints === 'number') {
+      return '/sprint-planning';
+    }
+    
+    // Single Ticket: has ticket_key and generated_description
+    if (results.ticket_key && results.generated_description) {
+      return '/single-ticket';
+    }
+  }
+
+  // Default: show modal if we can't determine the route
+  return null;
+}
+
 async function loadJobs() {
   loading.value = true;
   try {
     const response = await listJobs(filters.value);
-    jobs.value = response.jobs || [];
+    const jobsList = response.jobs || [];
+    // Sort by started_at descending (newest first)
+    jobs.value = jobsList.sort((a, b) => {
+      const dateA = new Date(a.started_at).getTime();
+      const dateB = new Date(b.started_at).getTime();
+      return dateB - dateA; // Descending order
+    });
+    
+    // Reset cancelling state for jobs that are no longer cancellable
+    jobs.value.forEach(job => {
+      if (!['started', 'processing'].includes(job.status)) {
+        cancellingJobIds.value.delete(job.job_id);
+      }
+    });
   } catch (error: any) {
     uiStore.showError(error.response?.data?.detail || 'Failed to load jobs');
     error('Error loading jobs:', error);
@@ -145,19 +222,36 @@ async function loadJobs() {
 async function handleCancel(jobId: string) {
   if (!confirm('Cancel this job?')) return;
 
+  // Mark as cancelling and disable button
+  cancellingJobIds.value.add(jobId);
+
   try {
     await cancelJob(jobId);
-    uiStore.showSuccess('Job cancellation requested');
+    uiStore.showInfo('Cancellation request sent');
     // Refresh the list
     await loadJobs();
   } catch (error: any) {
+    // Remove from cancelling set on error so user can try again
+    cancellingJobIds.value.delete(jobId);
     uiStore.showError(error.response?.data?.detail || 'Failed to cancel job');
   }
 }
 
 function handleViewResults(job: JobStatus) {
-  selectedJob.value = job;
-  showResultsModal.value = true;
+  // Try to navigate to the appropriate page
+  const route = getRouteForJob(job);
+  
+  if (route) {
+    // Navigate to the page with job ID in URL
+    router.push({
+      path: route,
+      query: { jobId: job.job_id },
+    });
+  } else {
+    // Fallback: show modal if we can't determine the route
+    selectedJob.value = job;
+    showResultsModal.value = true;
+  }
 }
 
 onMounted(() => {

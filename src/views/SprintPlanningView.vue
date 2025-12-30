@@ -168,6 +168,7 @@
       <JobStatusCard
         :job="jobStatus"
         :is-loading="isPolling"
+        :is-cancelling="isCancelling"
         @cancel="handleCancelJob"
         @refresh="refreshJob"
         @view-results="handleViewJobResults"
@@ -303,7 +304,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useModelsStore } from '../stores/models';
 import { useUIStore } from '../stores/ui';
 import { planEpicToSprints, getJobStatus } from '../api/endpoints';
@@ -312,6 +313,7 @@ import LoadingSpinner from '../components/LoadingSpinner.vue';
 import LLMSelector from '../components/LLMSelector.vue';
 import JobStatusCard from '../components/JobStatusCard.vue';
 import { useJobPolling } from '../composables/useJobPolling';
+import { useJobUrl } from '../composables/useJobUrl';
 import { error } from '../utils/logger';
 
 const modelsStore = useModelsStore();
@@ -328,10 +330,12 @@ const asyncMode = ref(true);
 const autoCreateSprints = ref(false);
 const loading = ref(false);
 const response = ref<SprintPlanningResponse | null>(null);
-const jobId = ref<string | null>(null);
+
+// Use useJobUrl for job ID management
+const { jobId, setJobId: setJobIdInUrl, removeFromUrl: removeJobIdFromUrl } = useJobUrl('jobId');
 
 // Job polling
-const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } = useJobPolling(
+const { job: jobStatus, isPolling, isCancelling, startPolling, cancelJob: cancelJobPolling } = useJobPolling(
   jobId,
   {
     onComplete: async (job) => {
@@ -340,6 +344,9 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
         if (response.value.success) {
           uiStore.showSuccess(`Planning complete: ${response.value.total_tasks} tasks across ${response.value.total_sprints} sprints`);
         }
+        // Don't clear job ID from URL - keep it for reference
+        // Only clear the local ref to hide status card
+        // Note: Form fields (epicKey, boardId, etc.) are preserved and NOT cleared
         jobId.value = null;
       }
     },
@@ -349,11 +356,46 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
   }
 );
 
+// Restore job from URL on mount
+onMounted(async () => {
+  if (jobId.value) {
+    try {
+      const job = await getJobStatus(jobId.value);
+      if (['started', 'processing'].includes(job.status)) {
+        // Job is still active, start polling
+        startPolling();
+      } else if (job.status === 'completed' && job.results) {
+        // Job is completed, restore results
+        response.value = job.results as SprintPlanningResponse;
+        if (response.value.success) {
+          uiStore.showSuccess(`Planning complete: ${response.value.total_tasks} tasks across ${response.value.total_sprints} sprints`);
+        }
+        // Clear local ref to hide status card, but keep in URL
+        // Note: Form fields (epicKey, boardId, etc.) are preserved and NOT cleared
+        jobId.value = null;
+      } else if (job.status === 'failed') {
+        uiStore.showError(`Job failed: ${job.error || 'Unknown error'}`);
+        jobId.value = null;
+      } else if (job.status === 'cancelled') {
+        uiStore.showInfo('Job was cancelled');
+        jobId.value = null;
+      }
+    } catch (err: any) {
+      error('Error restoring job from URL:', err);
+      uiStore.showError('Failed to restore job from URL');
+      removeJobIdFromUrl();
+    }
+  }
+});
+
 async function handlePlan() {
   if (!epicKey.value || !boardId.value) {
     uiStore.showError('Please provide both Epic Key and Board ID');
     return;
   }
+
+  // Clear job ID from URL before starting new planning
+  removeJobIdFromUrl();
 
   loading.value = true;
   response.value = null;
@@ -376,7 +418,7 @@ async function handlePlan() {
     // Check if it's a BatchResponse (async mode)
     if ('job_id' in result) {
       const batchResponse = result as BatchResponse;
-      jobId.value = batchResponse.job_id;
+      setJobIdInUrl(batchResponse.job_id);
       uiStore.showInfo(`Job started: ${batchResponse.job_id}`);
       startPolling();
     } else if (result.success) {
@@ -404,9 +446,18 @@ function formatDate(dateString: string): string {
 }
 
 async function handleCancelJob() {
-  if (jobId.value) {
+  if (!jobId.value) {
+    return;
+  }
+  
+  try {
     await cancelJobPolling();
-    jobId.value = null;
+    // Only remove from URL if cancel was successful
+    // The cancelJobPolling function handles the API call, status checks, and status updates
+    removeJobIdFromUrl();
+  } catch (err: any) {
+    // Error is already handled in cancelJobPolling, but we don't remove from URL on error
+    error('Error cancelling job:', err);
   }
 }
 

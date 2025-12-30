@@ -110,6 +110,7 @@
       <JobStatusCard
         :job="jobStatus"
         :is-loading="isPolling"
+        :is-cancelling="isCancelling"
         @cancel="handleCancelJob"
         @refresh="refreshJob"
         @view-results="handleViewJobResults"
@@ -452,7 +453,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue';
+import { ref, computed, nextTick, onMounted } from 'vue';
 import { useUIStore } from '../stores/ui';
 import { syncStoriesFromPRD, getJobStatus, updateStoryTicket, bulkUpdateStories, bulkCreateStories, createStoryTicket } from '../api/endpoints';
 import type { PRDStorySyncResponse, BatchResponse, StoryDetail, StoryUpdateItem, BulkUpdateStoriesResponse, BulkCreateStoriesResponse } from '../types/api';
@@ -462,6 +463,7 @@ import PromptResubmitModal from '../components/PromptResubmitModal.vue';
 import JobStatusCard from '../components/JobStatusCard.vue';
 import StoryEditModal from '../components/StoryEditModal.vue';
 import { useJobPolling } from '../composables/useJobPolling';
+import { useJobUrl } from '../composables/useJobUrl';
 import { log, error as logError } from '../utils/logger';
 import { isAsyncResponse, getCreatedTicketKeys, handleDuplicateJob } from '../utils/jobHelpers';
 
@@ -480,7 +482,9 @@ const showEditModal = ref(false);
 const editingStoryIndex = ref<number | null>(null);
 const creatingStoryIndex = ref<number | null>(null);
 const bulkUpdating = ref(false);
-const jobId = ref<string | null>(null);
+
+// Use useJobUrl for job ID management
+const { jobId, setJobId: setJobIdInUrl, removeFromUrl: removeJobIdFromUrl } = useJobUrl('jobId');
 
 // Computed property for stories with JIRA keys
 const storiesWithJiraKey = computed(() => {
@@ -493,7 +497,7 @@ const storiesWithoutJiraKey = computed(() => {
 });
 
 // Job polling
-const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } = useJobPolling(
+const { job: jobStatus, isPolling, isCancelling, startPolling, cancelJob: cancelJobPolling } = useJobPolling(
   jobId,
   {
     onComplete: async (job) => {
@@ -578,6 +582,9 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
             }
           }
         }
+        // Don't clear job ID from URL - keep it for reference
+        // Only clear the local ref to hide status card
+        // Note: Form fields (epicKey, prdUrl, etc.) are preserved and NOT cleared
         jobId.value = null;
       }
     },
@@ -587,11 +594,90 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
   }
 );
 
+// Restore job from URL on mount
+onMounted(async () => {
+  if (jobId.value) {
+    try {
+      const job = await getJobStatus(jobId.value);
+      if (['started', 'processing'].includes(job.status)) {
+        // Job is still active, start polling
+        startPolling();
+      } else if (job.status === 'completed' && job.results) {
+        // Job is completed, restore results
+        const results = job.results as any;
+        
+        // Handle different result types (same logic as onComplete)
+        if (results.total_stories !== undefined && results.results !== undefined) {
+          const bulkResult = results as BulkCreateStoriesResponse;
+          if (bulkResult.successful > 0) {
+            const storiesToCreate = stories.value.filter(s => !s.jira_key);
+            bulkResult.results.forEach((r, idx) => {
+              if (r.success && r.ticket_key && storiesToCreate[idx]) {
+                const storyIndex = stories.value.findIndex(s => s.summary === storiesToCreate[idx].summary);
+                if (storyIndex !== -1) {
+                  stories.value[storyIndex].jira_key = r.ticket_key;
+                }
+              }
+            });
+            uiStore.showSuccess(`Successfully created ${bulkResult.successful} story/stories: ${bulkResult.created_tickets.join(', ')}`);
+          }
+        } else if (results.creation_results?.created_tickets) {
+          const { stories: createdStoryKeys } = getCreatedTicketKeys(results);
+          if (results.story_details && results.story_details.length > 0) {
+            results.story_details.forEach((responseStory: StoryDetail) => {
+              if (responseStory.jira_key) {
+                const localStoryIndex = stories.value.findIndex(s => 
+                  s.summary === responseStory.summary || 
+                  (!s.jira_key && responseStory.jira_key)
+                );
+                if (localStoryIndex !== -1) {
+                  stories.value[localStoryIndex].jira_key = responseStory.jira_key;
+                  stories.value[localStoryIndex].jira_url = responseStory.jira_url;
+                }
+              }
+            });
+          }
+          if (createdStoryKeys.length > 0) {
+            uiStore.showSuccess(`Successfully created ${createdStoryKeys.length} story/stories: ${createdStoryKeys.join(', ')}`);
+          }
+        } else {
+          // PRD sync result
+          const prdResults = results as PRDStorySyncResponse;
+          response.value = prdResults;
+          if (prdResults.story_details && prdResults.story_details.length > 0) {
+            stories.value = prdResults.story_details.map(story => ({ ...story }));
+          }
+          if (prdResults.success) {
+            const storyCount = prdResults.story_details?.length || 0;
+            uiStore.showSuccess(`Sync complete: ${storyCount} story/stories processed`);
+          }
+        }
+        // Clear local ref to hide status card, but keep in URL
+        // Note: Form fields (epicKey, prdUrl, etc.) are preserved and NOT cleared
+        jobId.value = null;
+      } else if (job.status === 'failed') {
+        uiStore.showError(`Job failed: ${job.error || 'Unknown error'}`);
+        jobId.value = null;
+      } else if (job.status === 'cancelled') {
+        uiStore.showInfo('Job was cancelled');
+        jobId.value = null;
+      }
+    } catch (err: any) {
+      logError('Error restoring job from URL:', err);
+      uiStore.showError('Failed to restore job from URL');
+      removeJobIdFromUrl();
+    }
+  }
+});
+
 async function handleSync() {
   if (!epicKey.value && !prdUrl.value) {
     uiStore.showError('Please provide either an Epic Key or PRD URL');
     return;
   }
+
+  // Clear job ID from URL before starting new sync
+  removeJobIdFromUrl();
 
   loading.value = true;
   response.value = null;
@@ -609,7 +695,7 @@ async function handleSync() {
     // Check if it's a BatchResponse (async mode)
     if ('job_id' in result) {
       const batchResponse = result as BatchResponse;
-      jobId.value = batchResponse.job_id;
+      setJobIdInUrl(batchResponse.job_id);
       uiStore.showInfo(`Job started: ${batchResponse.job_id}`);
       startPolling();
     } else if (result.success) {
@@ -650,9 +736,18 @@ function formatKey(key: string): string {
 }
 
 async function handleCancelJob() {
-  if (jobId.value) {
+  if (!jobId.value) {
+    return;
+  }
+  
+  try {
     await cancelJobPolling();
-    jobId.value = null;
+    // Only remove from URL if cancel was successful
+    // The cancelJobPolling function handles the API call, status checks, and status updates
+    removeJobIdFromUrl();
+  } catch (err: any) {
+    // Error is already handled in cancelJobPolling, but we don't remove from URL on error
+    logError('Error cancelling job:', err);
   }
 }
 

@@ -106,6 +106,7 @@
       <JobStatusCard
         :job="jobStatus"
         :is-loading="isPolling"
+        :is-cancelling="isCancelling"
         @cancel="handleCancelJob"
         @refresh="refreshJob"
         @view-results="handleViewJobResults"
@@ -213,6 +214,7 @@
           <JobStatusCard
             :job="createAllJobStatus"
             :is-loading="isCreateAllPolling"
+            :is-cancelling="isCreateAllCancelling"
             @cancel="handleCancelCreateAllJob"
             @refresh="handleRefreshCreateAllJob"
             @view-results="handleViewCreateAllJobResults"
@@ -294,7 +296,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useModelsStore } from '../stores/models';
 import { useUIStore } from '../stores/ui';
 import { generateTasks, bulkCreateTasks, getJobStatus } from '../api/endpoints';
@@ -306,6 +308,7 @@ import TaskPreviewModal from '../components/TaskPreviewModal.vue';
 import TaskEditModal from '../components/TaskEditModal.vue';
 import JobStatusCard from '../components/JobStatusCard.vue';
 import { useJobPolling } from '../composables/useJobPolling';
+import { useJobUrl } from '../composables/useJobUrl';
 import { error, sanitizeError } from '../utils/logger';
 import { isAsyncResponse, handleDuplicateJob } from '../utils/jobHelpers';
 
@@ -324,12 +327,14 @@ const showABTestModal = ref(false);
 const showPreviewModal = ref(false);
 const showEditModal = ref(false);
 const editingTaskIndex = ref<number | null>(null);
-const jobId = ref<string | null>(null);
+
+// Use useJobUrl for job ID management
+const { jobId, setJobId: setJobIdInUrl, removeFromUrl: removeJobIdFromUrl } = useJobUrl('jobId');
 
 // Create All state
 const createAllAsyncMode = ref(true);
 const creatingAll = ref(false);
-const createAllJobId = ref<string | null>(null);
+const { jobId: createAllJobId, setJobId: setCreateAllJobIdInUrl, removeFromUrl: removeCreateAllJobIdFromUrl } = useJobUrl('createAllJobId');
 
 // Computed properties for summary stats calculated from tasks array
 const totalTasks = computed(() => tasks.value.length);
@@ -350,7 +355,7 @@ const averageTaskDays = computed(() => {
 });
 
 // Job polling for task generation
-const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } = useJobPolling(
+const { job: jobStatus, isPolling, isCancelling, startPolling, cancelJob: cancelJobPolling } = useJobPolling(
   jobId,
   {
     onComplete: async (job) => {
@@ -366,7 +371,10 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
           }));
           uiStore.showSuccess(`Generated ${tasks.value.length} tasks`);
         }
-        jobId.value = null; // Clear job ID to hide status card
+        // Don't clear job ID from URL - keep it for reference
+        // Only clear the local ref to hide status card
+        // Note: Form fields (storyKey, epicKey, etc.) are preserved and NOT cleared
+        jobId.value = null;
       }
     },
     onError: (err) => {
@@ -379,6 +387,7 @@ const { job: jobStatus, isPolling, startPolling, cancelJob: cancelJobPolling } =
 const {
   job: createAllJobStatus,
   isPolling: isCreateAllPolling,
+  isCancelling: isCreateAllCancelling,
   startPolling: startCreateAllPolling,
   cancelJob: cancelCreateAllJob,
 } = useJobPolling(createAllJobId, {
@@ -393,6 +402,8 @@ const {
         uiStore.showError(`Failed to create ${result.failed} task(s)`);
       }
     }
+    // Don't clear job ID from URL - keep it for reference
+    // Only clear the local ref
     createAllJobId.value = null;
   },
   onError: (err) => {
@@ -402,6 +413,80 @@ const {
   },
 });
 
+// Restore jobs from URL on mount
+onMounted(async () => {
+  // Restore jobId from URL
+  if (jobId.value) {
+    try {
+      const job = await getJobStatus(jobId.value);
+      if (['started', 'processing'].includes(job.status)) {
+        // Job is still active, start polling
+        startPolling();
+      } else if (job.status === 'completed' && job.results) {
+        // Job is completed, restore results
+        response.value = job.results as TaskGenerationResponse;
+        if (response.value.success) {
+          const story = storyKey.value.trim();
+          tasks.value = (response.value.task_details || []).map(task => ({
+            ...task,
+            story_key: task.story_key || story,
+          }));
+        }
+        // Clear local ref to hide status card, but keep in URL
+        // Note: Form fields (storyKey, epicKey, etc.) are preserved and NOT cleared
+        jobId.value = null;
+      } else if (job.status === 'failed') {
+        uiStore.showError(`Job failed: ${job.error || 'Unknown error'}`);
+        // Clear local ref to hide status card, but keep in URL
+        jobId.value = null;
+      } else if (job.status === 'cancelled') {
+        uiStore.showInfo('Job was cancelled');
+        // Clear local ref to hide status card, but keep in URL
+        jobId.value = null;
+      }
+    } catch (err: any) {
+      error('Error restoring job from URL:', err);
+      uiStore.showError('Failed to restore job from URL');
+      // Remove invalid job ID from URL
+      removeJobIdFromUrl();
+    }
+  }
+
+  // Restore createAllJobId from URL
+  if (createAllJobId.value) {
+    try {
+      const job = await getJobStatus(createAllJobId.value);
+      if (['started', 'processing'].includes(job.status)) {
+        // Job is still active, start polling
+        startCreateAllPolling();
+      } else if (job.status === 'completed' && job.results) {
+        // Job is completed, restore results
+        const result = job.results as BulkCreateTasksResponse;
+        if (result.created_tickets && result.created_tickets.length > 0) {
+          uiStore.showSuccess(`Successfully created ${result.successful} task(s): ${result.created_tickets.join(', ')}`);
+          updateTasksWithCreatedKeys(result);
+        }
+        // Clear local ref, but keep in URL
+        createAllJobId.value = null;
+        creatingAll.value = false;
+      } else if (job.status === 'failed') {
+        uiStore.showError(`Bulk creation job failed: ${job.error || 'Unknown error'}`);
+        createAllJobId.value = null;
+        creatingAll.value = false;
+      } else if (job.status === 'cancelled') {
+        uiStore.showInfo('Bulk creation job was cancelled');
+        createAllJobId.value = null;
+        creatingAll.value = false;
+      }
+    } catch (err: any) {
+      error('Error restoring createAllJobId from URL:', err);
+      uiStore.showError('Failed to restore bulk creation job from URL');
+      // Remove invalid job ID from URL
+      removeCreateAllJobIdFromUrl();
+    }
+  }
+});
+
 async function handleGenerate() {
   const trimmedStoryKey = storyKey.value.trim();
   const trimmedEpicKey = epicKey.value.trim();
@@ -409,6 +494,9 @@ async function handleGenerate() {
     uiStore.showError('Please enter both story key and epic key');
     return;
   }
+
+  // Clear job ID from URL before starting new generation
+  removeJobIdFromUrl();
 
   loading.value = true;
   response.value = null;
@@ -429,7 +517,7 @@ async function handleGenerate() {
     // Check if it's a BatchResponse (async mode)
     if ('job_id' in result) {
       const batchResponse = result as BatchResponse;
-      jobId.value = batchResponse.job_id;
+      setJobIdInUrl(batchResponse.job_id);
       uiStore.showInfo(`Job started: ${batchResponse.job_id}`);
       startPolling();
     } else if (result.success) {
@@ -556,6 +644,9 @@ async function handleCreateAll() {
     return;
   }
 
+  // Clear createAllJobId from URL before starting new bulk creation
+  removeCreateAllJobIdFromUrl();
+
   creatingAll.value = true;
 
   try {
@@ -590,7 +681,7 @@ async function handleCreateAll() {
     // Check if it's an async response
     if (isAsyncResponse(result)) {
       const batchResponse = result as BatchResponse;
-      createAllJobId.value = batchResponse.job_id;
+      setCreateAllJobIdInUrl(batchResponse.job_id);
       uiStore.showInfo(`Bulk creation job started: ${batchResponse.job_id}`);
       startCreateAllPolling();
     } else {
@@ -616,7 +707,7 @@ async function handleCreateAll() {
     if (err.response?.status === 409) {
       const existingJobId = handleDuplicateJob(err);
       if (existingJobId) {
-        createAllJobId.value = existingJobId;
+        setCreateAllJobIdInUrl(existingJobId);
         uiStore.showInfo(`A job is already running. Tracking job: ${existingJobId}`);
         startCreateAllPolling();
       } else {
@@ -648,9 +739,18 @@ function handleABTestResult(result: any) {
 }
 
 async function handleCancelJob() {
-  if (jobId.value) {
+  if (!jobId.value) {
+    return;
+  }
+  
+  try {
     await cancelJobPolling();
-    jobId.value = null;
+    // Only remove from URL if cancel was successful
+    // The cancelJobPolling function handles the API call, status checks, and status updates
+    removeJobIdFromUrl();
+  } catch (err: any) {
+    // Error is already handled in cancelJobPolling, but we don't remove from URL on error
+    error('Error cancelling job:', err);
   }
 }
 
@@ -691,10 +791,19 @@ function handleViewJobResults() {
 
 // Create All job handlers
 async function handleCancelCreateAllJob() {
-  if (createAllJobId.value) {
+  if (!createAllJobId.value) {
+    return;
+  }
+  
+  try {
     await cancelCreateAllJob();
-    createAllJobId.value = null;
+    // Only remove from URL if cancel was successful
+    // The cancelCreateAllJob function handles the API call, status checks, and status updates
+    removeCreateAllJobIdFromUrl();
     creatingAll.value = false;
+  } catch (err: any) {
+    // Error is already handled in cancelCreateAllJob, but we don't remove from URL on error
+    error('Error cancelling create all job:', err);
   }
 }
 

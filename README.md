@@ -71,7 +71,8 @@ See `env.example` for all available configuration options.
 ### First Time Setup
 
 1. Start the application (`npm run dev`)
-2. Enter your JIRA API credentials in the authentication modal
+2. Enter your JIRA API credentials in the authentication modal (if `VITE_AUTO_AUTH_MODAL` is enabled)
+   - If authentication is disabled, you can still authenticate manually via Settings
 3. Credentials are stored in browser localStorage for future sessions
 
 ### Workflow Pattern
@@ -173,6 +174,27 @@ Configure allowed hosts for the Vite dev server:
 ```env
 VITE_ALLOWED_HOSTS=example.com,subdomain.example.com
 ```
+
+### Authentication Modal Behavior
+
+Control whether the authentication modal appears automatically:
+
+```env
+# Enable/disable automatic authentication modal popup
+# When set to false, the auth modal will not appear automatically on app load
+# or on 401 errors. The modal will only appear when user manually clears
+# credentials in settings. App will function without authentication (optional auth mode)
+# Default: true (maintains current behavior)
+VITE_AUTO_AUTH_MODAL=true
+```
+
+**Behavior when `VITE_AUTO_AUTH_MODAL=false`:**
+- Modal does NOT appear automatically on app load
+- Modal does NOT appear on 401 errors (credentials cleared silently)
+- Modal DOES appear when user manually clears credentials in settings
+- App functions without authentication (optional auth mode)
+
+This is useful for development environments or when authentication is optional.
 
 ## 🔒 Security
 

@@ -36,6 +36,12 @@ class ApiClient {
         if (error.response?.status === 401) {
           // Clear stored credentials on 401
           this.clearAuth();
+          // Notify auth store to update state and conditionally show modal
+          // Use lazy import to avoid circular dependency
+          import('../stores/auth').then(({ useAuthStore }) => {
+            const authStore = useAuthStore();
+            authStore.handleExternalAuthClear();
+          });
         }
         return Promise.reject(error);
       }

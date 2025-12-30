@@ -34,6 +34,12 @@ Edit `.env` and set your API base URL:
 VITE_API_BASE_URL=http://localhost:8000
 ```
 
+**Optional:** To disable automatic authentication modal popup (useful for development or optional auth scenarios):
+
+```env
+VITE_AUTO_AUTH_MODAL=false
+```
+
 See `env.example` for all available configuration options.
 
 ### 3. Start Development Server
@@ -47,13 +53,15 @@ The application will start at **http://localhost:5173**
 ### 4. First Login
 
 1. Open http://localhost:5173 in your browser
-2. An authentication modal will appear
+2. An authentication modal will appear (unless `VITE_AUTO_AUTH_MODAL=false` is set)
 3. Enter your JIRA credentials:
    - **Username**: Your JIRA email (e.g., user@example.com)
    - **API Token**: Your JIRA API token or password
 4. Click "Connect"
 
 Your credentials will be stored in browser localStorage for future sessions.
+
+**Note:** If you've set `VITE_AUTO_AUTH_MODAL=false` in your `.env` file, the authentication modal will not appear automatically. You can still authenticate by going to Settings and clearing credentials, which will trigger the modal. The app will function without authentication in this mode.
 
 ## Quick Test
 
@@ -167,6 +175,8 @@ curl http://localhost:8000/health
 2. Test API directly: `curl http://localhost:8000/health`
 3. Clear browser localStorage and try again
 4. Check Settings → Clear Credentials
+
+**Note:** If you want to disable the automatic authentication modal, set `VITE_AUTO_AUTH_MODAL=false` in your `.env` file. The app will work without authentication, and the modal will only appear when you manually clear credentials in Settings.
 
 ### No LLM models available
 

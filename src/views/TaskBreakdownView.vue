@@ -60,17 +60,30 @@
           <p class="mt-1 text-xs text-gray-500">Optional: Add any extra context or specific requirements for the task breakdown</p>
         </div>
 
-        <!-- Async Mode Option -->
-        <div class="flex items-center">
-          <input
-            id="async-mode"
-            v-model="asyncMode"
-            type="checkbox"
-            class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
-          />
-          <label for="async-mode" class="ml-2 block text-sm text-gray-900">
-            Run in background (for long-running operations)
-          </label>
+        <!-- Options -->
+        <div class="space-y-3">
+          <div class="flex items-center">
+            <input
+              id="generate-test-cases"
+              v-model="generateTestCases"
+              type="checkbox"
+              class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+            />
+            <label for="generate-test-cases" class="ml-2 block text-sm text-gray-900">
+              Generate test cases
+            </label>
+          </div>
+          <div class="flex items-center">
+            <input
+              id="async-mode"
+              v-model="asyncMode"
+              type="checkbox"
+              class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+            />
+            <label for="async-mode" class="ml-2 block text-sm text-gray-900">
+              Run in background (for long-running operations)
+            </label>
+          </div>
         </div>
 
         <!-- Generate Button -->
@@ -301,6 +314,7 @@ const uiStore = useUIStore();
 const storyKeys = ref('');
 const epicKey = ref('');
 const additionalContext = ref('');
+const generateTestCases = ref(false);
 const asyncMode = ref(true);
 const loading = ref(false);
 const response = ref<TaskGenerationResponse | null>(null);
@@ -407,6 +421,7 @@ async function handleGenerate() {
       llm_model: modelsStore.selectedModel || undefined,
       additional_context: additionalContext.value || undefined,
       async_mode: asyncMode.value,
+      generate_test_cases: generateTestCases.value,
     });
 
     // Check if it's a BatchResponse (async mode)

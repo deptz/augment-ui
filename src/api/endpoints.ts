@@ -66,11 +66,13 @@ export async function generateTasks(params: {
   llm_model?: string;
   additional_context?: string;
   async_mode?: boolean;
+  generate_test_cases?: boolean;
 }): Promise<TaskGenerationResponse | BatchResponse> {
   const response = await apiClient.axios.post<TaskGenerationResponse | BatchResponse>('/plan/tasks/generate', {
     ...params,
     dry_run: true, // Always dry run mode
     async_mode: params.async_mode ?? false,
+    generate_test_cases: params.generate_test_cases ?? false,
   });
   return response.data;
 }

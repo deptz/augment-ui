@@ -87,9 +87,9 @@
         :job="jobStatus"
         :is-loading="isPolling"
         :is-cancelling="isCancelling"
+        :show-auto-refresh-info="true"
         @cancel="handleCancelJob"
         @refresh="refreshJob"
-        @view-results="handleViewJobResults"
       />
     </div>
 
@@ -281,6 +281,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { useModelsStore } from '../stores/models';
 import { useUIStore } from '../stores/ui';
 import { analyzeStoryCoverage, updateJiraTicket, createTaskFromSuggestion, getJobStatus } from '../api/endpoints';
@@ -295,6 +296,7 @@ import { useJobPolling } from '../composables/useJobPolling';
 import { useJobUrl } from '../composables/useJobUrl';
 import { error } from '../utils/logger';
 
+const route = useRoute();
 const modelsStore = useModelsStore();
 const uiStore = useUIStore();
 
@@ -338,9 +340,20 @@ const { job: jobStatus, isPolling, isCancelling, startPolling, cancelJob: cancel
 
 // Restore job from URL on mount
 onMounted(async () => {
+  // Prefill form from query params
+  if (route.query.storyKey && typeof route.query.storyKey === 'string') {
+    storyKey.value = route.query.storyKey;
+  }
+  
   if (jobId.value) {
     try {
       const job = await getJobStatus(jobId.value);
+      
+      // Prefill form from job data if not already set from query params
+      if (!storyKey.value && job.story_key) {
+        storyKey.value = job.story_key;
+      }
+      
       if (['started', 'processing'].includes(job.status)) {
         // Job is still active, start polling
         startPolling();

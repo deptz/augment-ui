@@ -12,7 +12,7 @@
           </h2>
           <p class="text-sm text-gray-500 mt-1">
             <span class="font-mono">{{ job?.job_id }}</span>
-            <span v-if="job?.job_type" class="ml-2">• {{ job.job_type }}</span>
+            <span v-if="job?.job_type" class="ml-2">• {{ getJobTypeLabel(job.job_type) }}</span>
           </p>
         </div>
         <button
@@ -51,6 +51,7 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { JobStatus } from '../types/api';
+import { getJobTypeLabel } from '../utils/jobTypes';
 
 const props = defineProps<{
   job: JobStatus | null;

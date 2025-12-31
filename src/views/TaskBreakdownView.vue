@@ -107,9 +107,9 @@
         :job="jobStatus"
         :is-loading="isPolling"
         :is-cancelling="isCancelling"
+        :show-auto-refresh-info="true"
         @cancel="handleCancelJob"
         @refresh="refreshJob"
-        @view-results="handleViewJobResults"
       />
     </div>
 
@@ -215,9 +215,9 @@
             :job="createAllJobStatus"
             :is-loading="isCreateAllPolling"
             :is-cancelling="isCreateAllCancelling"
+            :show-auto-refresh-info="true"
             @cancel="handleCancelCreateAllJob"
             @refresh="handleRefreshCreateAllJob"
-            @view-results="handleViewCreateAllJobResults"
           />
         </div>
 
@@ -297,6 +297,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { useModelsStore } from '../stores/models';
 import { useUIStore } from '../stores/ui';
 import { generateTasks, bulkCreateTasks, getJobStatus } from '../api/endpoints';
@@ -312,6 +313,7 @@ import { useJobUrl } from '../composables/useJobUrl';
 import { error, sanitizeError } from '../utils/logger';
 import { isAsyncResponse, handleDuplicateJob } from '../utils/jobHelpers';
 
+const route = useRoute();
 const modelsStore = useModelsStore();
 const uiStore = useUIStore();
 
@@ -415,10 +417,33 @@ const {
 
 // Restore jobs from URL on mount
 onMounted(async () => {
+  // Prefill form from query params
+  if (route.query.storyKey && typeof route.query.storyKey === 'string') {
+    storyKey.value = route.query.storyKey;
+  }
+  if (route.query.epicKey && typeof route.query.epicKey === 'string') {
+    epicKey.value = route.query.epicKey;
+  }
+  
   // Restore jobId from URL
   if (jobId.value) {
     try {
       const job = await getJobStatus(jobId.value);
+      
+      // Prefill form from job data if not already set from query params
+      if (!storyKey.value && job.story_key) {
+        storyKey.value = job.story_key;
+      } else if (!storyKey.value && job.story_keys && job.story_keys.length > 0) {
+        storyKey.value = job.story_keys[0];
+      }
+      
+      if (!epicKey.value && job.results && typeof job.results === 'object') {
+        const results = job.results as any;
+        if (results.epic_key) {
+          epicKey.value = results.epic_key;
+        }
+      }
+      
       if (['started', 'processing'].includes(job.status)) {
         // Job is still active, start polling
         startPolling();

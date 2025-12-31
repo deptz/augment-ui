@@ -169,9 +169,9 @@
         :job="jobStatus"
         :is-loading="isPolling"
         :is-cancelling="isCancelling"
+        :show-auto-refresh-info="true"
         @cancel="handleCancelJob"
         @refresh="refreshJob"
-        @view-results="handleViewJobResults"
       />
     </div>
 
@@ -266,9 +266,9 @@
               <div>
                 <h3 class="text-base font-medium text-gray-900">{{ sprint.sprint_name }}</h3>
                 <p class="text-sm text-gray-600 mt-1">
-                  <span v-if="sprint.start_date">{{ formatDate(sprint.start_date) }}</span>
+                  <span v-if="sprint.start_date">{{ formatDateTime(sprint.start_date) }}</span>
                   <span v-if="sprint.start_date && sprint.end_date"> - </span>
-                  <span v-if="sprint.end_date">{{ formatDate(sprint.end_date) }}</span>
+                  <span v-if="sprint.end_date">{{ formatDateTime(sprint.end_date) }}</span>
                 </p>
                 <p class="text-xs text-gray-500 mt-1">State: {{ sprint.state }}</p>
               </div>
@@ -305,6 +305,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { useModelsStore } from '../stores/models';
 import { useUIStore } from '../stores/ui';
 import { planEpicToSprints, getJobStatus } from '../api/endpoints';
@@ -315,7 +316,9 @@ import JobStatusCard from '../components/JobStatusCard.vue';
 import { useJobPolling } from '../composables/useJobPolling';
 import { useJobUrl } from '../composables/useJobUrl';
 import { error } from '../utils/logger';
+import { formatDateTime } from '../utils/dateFormat';
 
+const route = useRoute();
 const modelsStore = useModelsStore();
 const uiStore = useUIStore();
 
@@ -358,9 +361,35 @@ const { job: jobStatus, isPolling, isCancelling, startPolling, cancelJob: cancel
 
 // Restore job from URL on mount
 onMounted(async () => {
+  // Prefill form from query params
+  if (route.query.epicKey && typeof route.query.epicKey === 'string') {
+    epicKey.value = route.query.epicKey;
+  }
+  if (route.query.boardId && typeof route.query.boardId === 'string') {
+    const parsed = parseInt(route.query.boardId, 10);
+    if (!isNaN(parsed)) {
+      boardId.value = parsed;
+    }
+  }
+  
   if (jobId.value) {
     try {
       const job = await getJobStatus(jobId.value);
+      
+      // Prefill form from job data if not already set from query params
+      if (!epicKey.value && job.results && typeof job.results === 'object') {
+        const results = job.results as any;
+        if (results.epic_key) {
+          epicKey.value = results.epic_key;
+        }
+      }
+      if (!boardId.value && job.results && typeof job.results === 'object') {
+        const results = job.results as any;
+        if (results.board_id) {
+          boardId.value = results.board_id;
+        }
+      }
+      
       if (['started', 'processing'].includes(job.status)) {
         // Job is still active, start polling
         startPolling();
@@ -436,14 +465,6 @@ async function handlePlan() {
   }
 }
 
-function formatDate(dateString: string): string {
-  try {
-    const date = new Date(dateString);
-    return date.toLocaleDateString();
-  } catch {
-    return dateString;
-  }
-}
 
 async function handleCancelJob() {
   if (!jobId.value) {

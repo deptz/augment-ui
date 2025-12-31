@@ -265,17 +265,40 @@ export interface JobStatus {
   error?: string | null;
   ticket_key?: string | null;
   ticket_keys?: string[] | null;
+  story_key?: string | null;
+  story_keys?: string[] | null;
 }
 
 export interface JobListResponse {
   jobs: JobStatus[];
   total: number;
+  limit?: number;
+  offset?: number;
+  has_more?: boolean;
 }
 
 export interface JobListParams {
+  // Existing (already in API)
   status?: JobStatusType | null;
   job_type?: string | null;
+  job_id?: string | null;
+  ticket_key?: string | null;
+  story_key?: string | null;
+  sort_by?: 'started_at' | 'completed_at' | 'status' | 'job_type' | 'job_id' | 'processed_tickets' | 'successful_tickets' | 'failed_tickets' | null;
+  sort_order?: 'asc' | 'desc' | null;
+  offset?: number | null;
   limit?: number;
+  
+  // New filters (to be added to API in future)
+  started_after?: string | null;
+  started_before?: string | null;
+  completed_after?: string | null;
+  completed_before?: string | null;
+  statuses?: JobStatusType[];
+  job_types?: string[];
+  has_error?: boolean | null;
+  min_processed?: number | null;
+  max_processed?: number | null;
 }
 
 // PRD Story Sync types

@@ -111,9 +111,9 @@
         :job="jobStatus"
         :is-loading="isPolling"
         :is-cancelling="isCancelling"
+        :show-auto-refresh-info="true"
         @cancel="handleCancelJob"
         @refresh="refreshJob"
-        @view-results="handleViewJobResults"
       />
     </div>
 
@@ -454,6 +454,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted } from 'vue';
+import { useRoute } from 'vue-router';
 import { useUIStore } from '../stores/ui';
 import { syncStoriesFromPRD, getJobStatus, updateStoryTicket, bulkUpdateStories, bulkCreateStories, createStoryTicket } from '../api/endpoints';
 import type { PRDStorySyncResponse, BatchResponse, StoryDetail, StoryUpdateItem, BulkUpdateStoriesResponse, BulkCreateStoriesResponse } from '../types/api';
@@ -467,6 +468,7 @@ import { useJobUrl } from '../composables/useJobUrl';
 import { log, error as logError } from '../utils/logger';
 import { isAsyncResponse, getCreatedTicketKeys, handleDuplicateJob } from '../utils/jobHelpers';
 
+const route = useRoute();
 const uiStore = useUIStore();
 
 const epicKey = ref('');
@@ -596,9 +598,23 @@ const { job: jobStatus, isPolling, isCancelling, startPolling, cancelJob: cancel
 
 // Restore job from URL on mount
 onMounted(async () => {
+  // Prefill form from query params
+  if (route.query.epicKey && typeof route.query.epicKey === 'string') {
+    epicKey.value = route.query.epicKey;
+  }
+  
   if (jobId.value) {
     try {
       const job = await getJobStatus(jobId.value);
+      
+      // Prefill form from job data if not already set from query params
+      if (!epicKey.value && job.results && typeof job.results === 'object') {
+        const results = job.results as any;
+        if (results.epic_key) {
+          epicKey.value = results.epic_key;
+        }
+      }
+      
       if (['started', 'processing'].includes(job.status)) {
         // Job is still active, start polling
         startPolling();

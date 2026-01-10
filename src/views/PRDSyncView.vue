@@ -240,17 +240,11 @@
                     Synced
                   </span>
                 </div>
-                <!-- PRD Row UUID (for debugging/transparency) - shown independently of JIRA key -->
+                <!-- PRD Row UUID (for debugging/transparency) - only shown when JIRA key is not available -->
                 <span
-                  v-if="story.prd_row_uuid"
-                  :class="[
-                    'inline-flex items-center px-2 py-0.5 rounded text-xs font-medium font-mono',
-                    story.jira_key 
-                      ? 'bg-gray-100 text-gray-600 cursor-pointer hover:bg-gray-200 transition-colors' 
-                      : 'bg-gray-100 text-gray-600'
-                  ]"
-                  :title="`PRD Row UUID: ${story.prd_row_uuid}${story.jira_key ? ' (click to copy)' : ''}`"
-                  @click="story.jira_key ? handleCopyUuid(story.prd_row_uuid!) : undefined"
+                  v-if="story.prd_row_uuid && !story.jira_key"
+                  class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium font-mono bg-gray-100 text-gray-600"
+                  :title="`PRD Row UUID: ${story.prd_row_uuid}`"
                 >
                   UUID
                 </span>

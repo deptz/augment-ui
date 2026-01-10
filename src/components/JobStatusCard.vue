@@ -105,6 +105,20 @@
           </template>
         </div>
       </div>
+      
+      <!-- PRD URL (for PRD sync jobs) -->
+      <div v-if="job?.prd_url" class="flex items-center gap-2">
+        <span class="text-xs font-medium text-gray-500 min-w-[70px]">PRD Link:</span>
+        <a
+          :href="job.prd_url"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-sm text-indigo-600 hover:text-indigo-800 hover:underline truncate max-w-md"
+          :title="job.prd_url"
+        >
+          {{ job.prd_url }}
+        </a>
+      </div>
     </div>
 
     <!-- Progress Bar (for batch jobs) -->

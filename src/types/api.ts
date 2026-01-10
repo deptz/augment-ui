@@ -267,6 +267,7 @@ export interface JobStatus {
   ticket_keys?: string[] | null;
   story_key?: string | null;
   story_keys?: string[] | null;
+  prd_url?: string | null;
 }
 
 export interface JobListResponse {

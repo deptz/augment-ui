@@ -460,12 +460,16 @@ function handleViewResults(job: JobStatus) {
         queryParams.storyKey = job.story_key;
       }
     } else if (route === '/prd-sync') {
-      // PRD sync: use epic_key
+      // PRD sync: use epic_key and prd_url
       if (job.results && typeof job.results === 'object') {
         const results = job.results as any;
         if (results.epic_key) {
           queryParams.epicKey = results.epic_key;
         }
+      }
+      // Include PRD URL if available
+      if (job.prd_url) {
+        queryParams.prdUrl = job.prd_url;
       }
     } else if (route === '/sprint-planning') {
       // Sprint planning: use epic_key and board_id

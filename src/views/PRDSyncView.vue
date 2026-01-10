@@ -602,6 +602,9 @@ onMounted(async () => {
   if (route.query.epicKey && typeof route.query.epicKey === 'string') {
     epicKey.value = route.query.epicKey;
   }
+  if (route.query.prdUrl && typeof route.query.prdUrl === 'string') {
+    prdUrl.value = route.query.prdUrl;
+  }
   
   if (jobId.value) {
     try {
@@ -613,6 +616,10 @@ onMounted(async () => {
         if (results.epic_key) {
           epicKey.value = results.epic_key;
         }
+      }
+      // Prefill PRD URL from job data if not already set from query params
+      if (!prdUrl.value && job.prd_url) {
+        prdUrl.value = job.prd_url;
       }
       
       if (['started', 'processing'].includes(job.status)) {

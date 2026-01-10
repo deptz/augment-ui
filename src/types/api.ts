@@ -25,6 +25,7 @@ export interface TicketResponse {
   user_prompt?: string;
   llm_provider?: string;
   llm_model?: string;
+  additional_context?: string | null;
 }
 
 export interface TaskDetail {
@@ -68,6 +69,7 @@ export interface TaskGenerationResponse {
   user_prompt?: string;
   llm_provider?: string;
   llm_model?: string;
+  additional_context?: string | null;
 }
 
 export interface StoryCoverageGap {
@@ -268,6 +270,7 @@ export interface JobStatus {
   story_key?: string | null;
   story_keys?: string[] | null;
   prd_url?: string | null;
+  additional_context?: string | null;
 }
 
 export interface JobListResponse {

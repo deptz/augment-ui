@@ -119,6 +119,30 @@
           {{ job.prd_url }}
         </a>
       </div>
+      
+      <!-- Additional Context (collapsible) -->
+      <div v-if="jobContext" class="mt-2">
+        <button
+          @click="expandedContext = !expandedContext"
+          class="flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700"
+        >
+          <svg
+            class="h-3 w-3 transition-transform"
+            :class="{ 'rotate-90': expandedContext }"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+          </svg>
+          Context Used
+        </button>
+        <div v-if="expandedContext" class="mt-1.5 ml-4">
+          <div class="bg-gray-50 rounded p-2 text-xs font-mono text-gray-700 whitespace-pre-wrap max-h-32 overflow-y-auto">
+            {{ jobContext }}
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Progress Bar (for batch jobs) -->
@@ -223,11 +247,30 @@ defineEmits<{
 // Expandable state for multiple keys
 const expandedTicketKeys = ref(false);
 const expandedStoryKeys = ref(false);
+const expandedContext = ref(false);
 
 // Reset expanded state when job changes
 watch(() => props.job?.job_id, () => {
   expandedTicketKeys.value = false;
   expandedStoryKeys.value = false;
+  expandedContext.value = false;
+});
+
+// Get context from job (top-level or nested in results)
+const jobContext = computed(() => {
+  if (!props.job) return null;
+  // Check top-level additional_context first
+  if (props.job.additional_context) {
+    return props.job.additional_context;
+  }
+  // Fallback to nested results.additional_context
+  if (props.job.results && typeof props.job.results === 'object') {
+    const results = props.job.results as any;
+    if (results.additional_context) {
+      return results.additional_context;
+    }
+  }
+  return null;
 });
 
 const hasKeys = computed(() => {

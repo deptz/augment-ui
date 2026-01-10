@@ -46,9 +46,17 @@
 
         <!-- Additional Context Input -->
         <div>
-          <label for="additional-context" class="block text-sm font-medium text-gray-700">
-            Additional Context (Optional)
-          </label>
+          <div class="flex items-center justify-between">
+            <label for="additional-context" class="block text-sm font-medium text-gray-700">
+              Additional Context (Optional)
+            </label>
+            <span
+              v-if="contextInherited"
+              class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800"
+            >
+              {{ contextInheritedFrom }}
+            </span>
+          </div>
           <textarea
             id="additional-context"
             name="additional-context"
@@ -57,6 +65,7 @@
             placeholder="Provide any additional context or instructions for task breakdown..."
             rows="4"
             class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            @input="handleContextInput"
           />
           <p class="mt-1 text-xs text-gray-500">Optional: Add any extra context or specific requirements for the task breakdown</p>
         </div>
@@ -320,6 +329,8 @@ const uiStore = useUIStore();
 const storyKey = ref('');
 const epicKey = ref('');
 const additionalContext = ref('');
+const contextInherited = ref(false);
+const contextInheritedFrom = ref('Inherited from previous operation');
 const generateTestCases = ref(false);
 const asyncMode = ref(true);
 const loading = ref(false);
@@ -424,6 +435,12 @@ onMounted(async () => {
   if (route.query.epicKey && typeof route.query.epicKey === 'string') {
     epicKey.value = route.query.epicKey;
   }
+  // Prefill additional context from query params (for cross-operation context reuse)
+  if (route.query.additionalContext && typeof route.query.additionalContext === 'string') {
+    additionalContext.value = route.query.additionalContext;
+    contextInherited.value = true;
+    contextInheritedFrom.value = 'Inherited from ticket generation';
+  }
   
   // Restore jobId from URL
   if (jobId.value) {
@@ -441,6 +458,17 @@ onMounted(async () => {
         const results = job.results as any;
         if (results.epic_key) {
           epicKey.value = results.epic_key;
+        }
+      }
+      
+      // Prefill additional context from job (top-level or nested in results)
+      if (!additionalContext.value) {
+        const jobContext = job.additional_context || 
+          (job.results && typeof job.results === 'object' ? (job.results as any).additional_context : null);
+        if (jobContext) {
+          additionalContext.value = jobContext;
+          contextInherited.value = true;
+          contextInheritedFrom.value = 'Inherited from job';
         }
       }
       
@@ -761,6 +789,10 @@ function handleTestPrompt() {
 
 function handleABTestResult(result: any) {
   uiStore.showInfo('A/B test completed');
+}
+
+function handleContextInput() {
+  contextInherited.value = false;
 }
 
 async function handleCancelJob() {

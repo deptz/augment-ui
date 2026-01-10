@@ -422,6 +422,24 @@ async function handleCancel(jobId: string) {
   }
 }
 
+/**
+ * Get additional context from job (top-level or nested in results)
+ */
+function getJobContext(job: JobStatus): string | null {
+  // Check top-level additional_context first
+  if (job.additional_context) {
+    return job.additional_context;
+  }
+  // Fallback to nested results.additional_context
+  if (job.results && typeof job.results === 'object') {
+    const results = job.results as any;
+    if (results.additional_context) {
+      return results.additional_context;
+    }
+  }
+  return null;
+}
+
 function handleViewResults(job: JobStatus) {
   // Try to navigate to the appropriate page
   const route = getRouteForJob(job);
@@ -429,6 +447,12 @@ function handleViewResults(job: JobStatus) {
   if (route) {
     // Extract form data from job to prefill forms
     const queryParams: Record<string, string> = { jobId: job.job_id };
+    
+    // Extract additional context if available (useful for cross-operation context reuse)
+    const jobContext = getJobContext(job);
+    if (jobContext) {
+      queryParams.additionalContext = jobContext;
+    }
     
     // Extract form data based on route
     if (route === '/single-ticket') {

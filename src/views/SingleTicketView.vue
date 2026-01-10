@@ -28,15 +28,24 @@
 
         <!-- Additional Context Input -->
         <div>
-          <label for="additional-context" class="block text-sm font-medium text-gray-700">
-            Additional Context (Optional)
-          </label>
+          <div class="flex items-center justify-between">
+            <label for="additional-context" class="block text-sm font-medium text-gray-700">
+              Additional Context (Optional)
+            </label>
+            <span
+              v-if="contextInherited"
+              class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800"
+            >
+              Inherited from previous operation
+            </span>
+          </div>
           <textarea
             id="additional-context"
             v-model="additionalContext"
             placeholder="Provide any additional context or instructions for generating the description..."
             rows="4"
             class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            @input="contextInherited = false"
           />
           <p class="mt-1 text-xs text-gray-500">Optional: Add any extra context or specific requirements for the description generation</p>
         </div>
@@ -214,6 +223,7 @@ const uiStore = useUIStore();
 
 const ticketKey = ref('');
 const additionalContext = ref('');
+const contextInherited = ref(false);
 const asyncMode = ref(true);
 const loading = ref(false);
 const previewing = ref(false);
@@ -257,6 +267,11 @@ onMounted(async () => {
   if (route.query.ticketKey && typeof route.query.ticketKey === 'string') {
     ticketKey.value = route.query.ticketKey;
   }
+  // Prefill additional context from query params (for cross-operation context reuse)
+  if (route.query.additionalContext && typeof route.query.additionalContext === 'string') {
+    additionalContext.value = route.query.additionalContext;
+    contextInherited.value = true;
+  }
   
   if (jobId.value) {
     try {
@@ -265,6 +280,16 @@ onMounted(async () => {
       // Prefill form from job data if not already set from query params
       if (!ticketKey.value && job.ticket_key) {
         ticketKey.value = job.ticket_key;
+      }
+      
+      // Prefill additional context from job (top-level or nested in results)
+      if (!additionalContext.value) {
+        const jobContext = job.additional_context || 
+          (job.results && typeof job.results === 'object' ? (job.results as any).additional_context : null);
+        if (jobContext) {
+          additionalContext.value = jobContext;
+          contextInherited.value = true;
+        }
       }
       
       if (['started', 'processing'].includes(job.status)) {

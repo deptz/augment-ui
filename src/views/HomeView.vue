@@ -100,7 +100,7 @@
             </svg>
           </div>
           <h3 class="text-lg font-medium text-gray-900 mb-2">
-            PRD Story Sync (WIP)
+            PRD Story Sync
           </h3>
           <p class="text-sm text-gray-500">
             Sync story tickets from PRD documents to JIRA

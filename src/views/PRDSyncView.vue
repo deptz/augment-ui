@@ -187,11 +187,11 @@
                 <!-- JIRA Key with metadata -->
                 <div v-if="story.jira_key" class="flex items-center space-x-1">
                   <a
-                    v-if="story.jira_url"
-                    :href="story.jira_url"
+                    v-if="getJiraUrl(story)"
+                    :href="getJiraUrl(story)!"
                     target="_blank"
                     rel="noopener noreferrer"
-                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 transition-colors"
+                    class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 transition-colors cursor-pointer"
                     :title="`Open ${story.jira_key} in JIRA`"
                   >
                     {{ story.jira_key }}
@@ -202,6 +202,7 @@
                   <span
                     v-else
                     class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
+                    :title="`JIRA URL not available for ${story.jira_key}`"
                   >
                     {{ story.jira_key }}
                   </span>
@@ -756,6 +757,33 @@ function formatKey(key: string): string {
     .split('_')
     .map(word => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
+}
+
+function getJiraUrl(story: StoryDetail): string | null {
+  // If jira_url is provided, use it
+  if (story.jira_url) {
+    return story.jira_url;
+  }
+  
+  // If jira_key exists but no jira_url, try to construct it
+  if (story.jira_key) {
+    // Try to extract base URL from other stories that have jira_url
+    const storyWithUrl = stories.value.find(s => s.jira_url && s.jira_key);
+    if (storyWithUrl && storyWithUrl.jira_url) {
+      try {
+        const url = new URL(storyWithUrl.jira_url);
+        // Extract base URL (e.g., https://domain.atlassian.net)
+        const baseUrl = `${url.protocol}//${url.host}`;
+        // Construct URL using standard JIRA browse pattern
+        return `${baseUrl}/browse/${story.jira_key}`;
+      } catch (e) {
+        // If URL parsing fails, return null
+        return null;
+      }
+    }
+  }
+  
+  return null;
 }
 
 async function handleCancelJob() {

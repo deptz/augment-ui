@@ -1,7 +1,7 @@
 <template>
   <div class="max-w-6xl mx-auto">
     <div class="mb-8">
-      <h1 class="text-3xl font-bold text-gray-900">PRD Story Sync (WIP)</h1>
+      <h1 class="text-3xl font-bold text-gray-900">PRD Story Sync</h1>
       <p class="mt-2 text-sm text-gray-600">
         Sync story tickets from PRD documents to JIRA
       </p>
@@ -115,6 +115,110 @@
         @cancel="handleCancelJob"
         @refresh="refreshJob"
       />
+    </div>
+
+    <!-- Sample PRD Format -->
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-lg font-medium text-gray-900">Expected PRD Format</h2>
+        <button
+          @click="showSamplePRD = !showSamplePRD"
+          class="text-sm text-indigo-600 hover:text-indigo-800 flex items-center"
+        >
+          <span>{{ showSamplePRD ? 'Hide' : 'Show' }} Sample</span>
+          <svg
+            class="ml-1 h-4 w-4 transition-transform"
+            :class="{ 'rotate-180': showSamplePRD }"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+      </div>
+      <p class="text-sm text-gray-600 mb-4">
+        Your PRD document should contain a table under a "User Stories" header with the following columns:
+      </p>
+      <div v-if="showSamplePRD" class="mt-4">
+        <h3 class="text-base font-semibold text-gray-900 mb-3">User Stories</h3>
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200 border border-gray-300 bg-white">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">
+                  User Story
+                </th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">
+                  Importance
+                </th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">
+                  Mockup / Technical Notes
+                </th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider border-b border-gray-300">
+                  Acceptance Criteria
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <tr>
+                <td class="px-4 py-3 text-sm text-gray-900 border-b border-gray-200">
+                  <div class="font-medium mb-1">Integrate to Quota Management API</div>
+                  <div class="text-gray-600 text-xs">
+                    As a Voice Call Backend<br/>
+                    I want to integrate with Quota Management API<br/>
+                    So that billing is accurately recording all deductions
+                  </div>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-700 border-b border-gray-200">
+                  High
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-700 border-b border-gray-200">
+                  API endpoint: /api/v1/quota/deduct<br/>
+                  Authentication: Bearer token required
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-700 border-b border-gray-200">
+                  <ul class="list-disc list-inside space-y-1">
+                    <li>API call succeeds with valid credentials</li>
+                    <li>Quota deduction is recorded in billing system</li>
+                    <li>Error handling for invalid requests</li>
+                  </ul>
+                </td>
+              </tr>
+              <tr>
+                <td class="px-4 py-3 text-sm text-gray-900 border-b border-gray-200">
+                  <div class="font-medium mb-1">User Authentication Flow</div>
+                  <div class="text-gray-600 text-xs">
+                    As a System User<br/>
+                    I want to authenticate using OAuth 2.0<br/>
+                    So that my account is securely accessed
+                  </div>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-700 border-b border-gray-200">
+                  Critical
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-700 border-b border-gray-200">
+                  OAuth 2.0 flow diagram available in design docs<br/>
+                  Support for refresh tokens
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-700 border-b border-gray-200">
+                  <ul class="list-disc list-inside space-y-1">
+                    <li>User can log in with valid credentials</li>
+                    <li>Access token expires after 1 hour</li>
+                    <li>Refresh token can be used to obtain new access token</li>
+                    <li>Invalid credentials return appropriate error</li>
+                  </ul>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="mt-4 p-3 bg-blue-100 rounded text-xs text-blue-800">
+          <strong>Note:</strong> The PRD Sync will extract stories from tables with this structure. 
+          Each row in the table will be converted into a JIRA story ticket with the user story format, 
+          acceptance criteria, and any mockup/technical notes included in the description.
+        </div>
+      </div>
     </div>
 
     <!-- Results -->
@@ -476,6 +580,7 @@ const response = ref<PRDStorySyncResponse | null>(null);
 const stories = ref<StoryDetail[]>([]);
 const showABTestModal = ref(false);
 const showEditModal = ref(false);
+const showSamplePRD = ref(false);
 const editingStoryIndex = ref<number | null>(null);
 const creatingStoryIndex = ref<number | null>(null);
 const bulkUpdating = ref(false);

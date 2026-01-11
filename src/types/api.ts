@@ -127,6 +127,7 @@ export interface StoryCoverageResponse {
   user_prompt?: string;
   llm_provider?: string;
   llm_model?: string;
+  additional_context?: string | null;
 }
 
 export interface JiraUpdateRequest {

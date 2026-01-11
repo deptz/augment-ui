@@ -802,6 +802,36 @@ async function handleCancelJob() {
   
   try {
     await cancelJobPolling();
+    
+    // Restore form fields from job data before removing from URL
+    if (jobStatus.value) {
+      // Restore storyKey if empty
+      if (!storyKey.value && jobStatus.value.story_key) {
+        storyKey.value = jobStatus.value.story_key;
+      } else if (!storyKey.value && jobStatus.value.story_keys && jobStatus.value.story_keys.length > 0) {
+        storyKey.value = jobStatus.value.story_keys[0];
+      }
+      
+      // Restore epicKey from results if empty
+      if (!epicKey.value && jobStatus.value.results && typeof jobStatus.value.results === 'object') {
+        const results = jobStatus.value.results as any;
+        if (results.epic_key) {
+          epicKey.value = results.epic_key;
+        }
+      }
+      
+      // Restore additionalContext if empty
+      if (!additionalContext.value) {
+        const jobContext = jobStatus.value.additional_context || 
+          (jobStatus.value.results && typeof jobStatus.value.results === 'object' ? (jobStatus.value.results as any).additional_context : null);
+        if (jobContext) {
+          additionalContext.value = jobContext;
+          contextInherited.value = true;
+          contextInheritedFrom.value = 'Inherited from cancelled job';
+        }
+      }
+    }
+    
     // Only remove from URL if cancel was successful
     // The cancelJobPolling function handles the API call, status checks, and status updates
     removeJobIdFromUrl();

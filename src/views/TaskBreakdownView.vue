@@ -27,21 +27,37 @@
           />
         </div>
 
-        <!-- Epic Key Input -->
+        <!-- Epic Key Input (Collapsible) -->
         <div>
-          <label for="epic-key" class="block text-sm font-medium text-gray-700">
-            Epic Key
-          </label>
-          <input
-            id="epic-key"
-            name="epic-key"
-            v-model="epicKey"
-            type="text"
-            autocomplete="on"
-            placeholder="e.g., EPIC-100"
-            @blur="epicKey = epicKey.trim()"
-            class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-          />
+          <button
+            type="button"
+            @click="showEpicKey = !showEpicKey"
+            class="flex items-center justify-between w-full text-left text-sm font-medium text-gray-700 hover:text-gray-900 focus:outline-none"
+          >
+            <span>
+              Epic Key <span class="text-gray-500 font-normal">(Optional)</span>
+            </span>
+            <svg
+              :class="['h-5 w-5 transform transition-transform', showEpicKey ? 'rotate-180' : '']"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          <div v-show="showEpicKey" class="mt-2">
+            <input
+              id="epic-key"
+              name="epic-key"
+              v-model="epicKey"
+              type="text"
+              autocomplete="on"
+              placeholder="e.g., EPIC-100"
+              @blur="epicKey = epicKey.trim()"
+              class="block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+            />
+          </div>
         </div>
 
         <!-- Additional Context Input -->
@@ -100,7 +116,7 @@
         <div>
           <button
             @click="handleGenerate"
-            :disabled="!storyKey.trim() || !epicKey.trim() || loading"
+            :disabled="!storyKey.trim() || loading"
             class="w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:bg-gray-400 disabled:cursor-not-allowed"
           >
             <LoadingSpinner v-if="loading" size="sm" color="white" class="mr-2" />
@@ -270,7 +286,7 @@
       operation-type="plan_tasks"
       :original-request="{
         story_keys: storyKey ? [storyKey.trim()] : [],
-        epic_key: epicKey.trim(),
+        epic_key: epicKey.trim() || undefined,
         additional_context: additionalContext || undefined
       }"
       :original-system-prompt="response?.system_prompt"
@@ -284,7 +300,7 @@
     <TaskPreviewModal
       v-if="showPreviewModal"
       :tasks="tasks"
-      :epic-key="epicKey.trim()"
+      :epic-key="epicKey.trim() || undefined"
       :story-keys="storyKey ? [storyKey.trim()] : []"
       @close="handleClosePreview"
       @create="handleCreateFromPreview"
@@ -295,7 +311,7 @@
       v-if="showEditModal"
       :task="editingTaskIndex !== null ? tasks[editingTaskIndex] : undefined"
       :task-index="editingTaskIndex ?? undefined"
-      :parent-key="epicKey.trim()"
+      :parent-key="epicKey.trim() || undefined"
       :default-story-key="getStoryKey()"
       :all-tasks="tasks"
       @close="handleCloseEdit"
@@ -328,6 +344,7 @@ const uiStore = useUIStore();
 
 const storyKey = ref('');
 const epicKey = ref('');
+const showEpicKey = ref(false);
 const additionalContext = ref('');
 const contextInherited = ref(false);
 const contextInheritedFrom = ref('Inherited from previous operation');
@@ -434,6 +451,7 @@ onMounted(async () => {
   }
   if (route.query.epicKey && typeof route.query.epicKey === 'string') {
     epicKey.value = route.query.epicKey;
+    showEpicKey.value = true;
   }
   // Prefill additional context from query params (for cross-operation context reuse)
   if (route.query.additionalContext && typeof route.query.additionalContext === 'string') {
@@ -458,6 +476,7 @@ onMounted(async () => {
         const results = job.results as any;
         if (results.epic_key) {
           epicKey.value = results.epic_key;
+          showEpicKey.value = true;
         }
       }
       
@@ -543,8 +562,8 @@ onMounted(async () => {
 async function handleGenerate() {
   const trimmedStoryKey = storyKey.value.trim();
   const trimmedEpicKey = epicKey.value.trim();
-  if (!trimmedStoryKey || !trimmedEpicKey) {
-    uiStore.showError('Please enter both story key and epic key');
+  if (!trimmedStoryKey) {
+    uiStore.showError('Please enter a story key');
     return;
   }
 
@@ -559,7 +578,7 @@ async function handleGenerate() {
     const story = trimmedStoryKey;
     const result = await generateTasks({
       story_keys: [story],
-      epic_key: trimmedEpicKey,
+      epic_key: trimmedEpicKey || undefined,
       llm_provider: modelsStore.selectedProvider || undefined,
       llm_model: modelsStore.selectedModel || undefined,
       additional_context: additionalContext.value || undefined,
@@ -597,8 +616,8 @@ async function handleGenerate() {
 }
 
 function handleAddTask() {
-  if (!epicKey.value.trim() || !storyKey.value.trim()) {
-    uiStore.showError('Please enter epic key and story key before adding tasks');
+  if (!storyKey.value.trim()) {
+    uiStore.showError('Please enter a story key before adding tasks');
     return;
   }
   editingTaskIndex.value = null;
@@ -686,10 +705,6 @@ async function handleCreateAll() {
   }
 
   const trimmedEpicKey = epicKey.value.trim();
-  if (!trimmedEpicKey) {
-    uiStore.showError('Epic key is required');
-    return;
-  }
 
   const story = getStoryKey();
   if (!story) {
@@ -715,7 +730,7 @@ async function handleCreateAll() {
 
       return {
         task_id: task.task_id || null, // Include for dependency resolution in backend
-        parent_key: trimmedEpicKey,
+        parent_key: trimmedEpicKey || undefined,
         summary: task.summary,
         description: task.description || '',
         story_key: task.story_key || story,
@@ -817,6 +832,7 @@ async function handleCancelJob() {
         const results = jobStatus.value.results as any;
         if (results.epic_key) {
           epicKey.value = results.epic_key;
+          showEpicKey.value = true;
         }
       }
       

@@ -14,6 +14,13 @@ export const useAuthStore = defineStore('auth', () => {
     return envValue === undefined || envValue === '' || envValue === 'true';
   });
 
+  // Check if default credentials are configured via environment variables
+  const hasDefaultCredentials = computed(() => {
+    const defaultUsername = import.meta.env.VITE_DEFAULT_USERNAME;
+    const defaultPassword = import.meta.env.VITE_DEFAULT_PASSWORD;
+    return !!(defaultUsername && defaultPassword);
+  });
+
   // Check if credentials are already stored
   function checkAuth() {
     const auth = apiClient.getAuth();
@@ -21,8 +28,10 @@ export const useAuthStore = defineStore('auth', () => {
       isAuthenticated.value = true;
       username.value = auth.username;
     } else {
-      // Only show modal automatically if VITE_AUTO_AUTH_MODAL is enabled
-      if (autoAuthModalEnabled.value) {
+      // Only show modal automatically if:
+      // 1. No default credentials are configured, AND
+      // 2. VITE_AUTO_AUTH_MODAL is enabled
+      if (!hasDefaultCredentials.value && autoAuthModalEnabled.value) {
         showAuthModal.value = true;
       }
     }
@@ -62,6 +71,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAuthenticated,
     username,
     showAuthModal,
+    hasDefaultCredentials,
     checkAuth,
     setCredentials,
     clearCredentials,

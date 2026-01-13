@@ -49,6 +49,17 @@ const router = createRouter({
   routes,
 });
 
+// Track page views in Google Analytics
+router.afterEach((to) => {
+  // Check if gtag is available (Google Analytics script loaded)
+  if (typeof window !== 'undefined' && (window as any).gtag) {
+    (window as any).gtag('config', 'G-JLES1V6N73', {
+      page_path: to.path,
+      page_title: to.name || to.path,
+    });
+  }
+});
+
 export default router;
 
 

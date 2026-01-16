@@ -86,6 +86,9 @@
           <p class="mt-1 text-xs text-gray-500">Optional: Add any extra context or specific requirements for the task breakdown</p>
         </div>
 
+        <!-- Repository Selector -->
+        <RepoSelector v-model="repos" :disabled="loading" />
+
         <!-- Options -->
         <div class="space-y-3">
           <div class="flex items-center">
@@ -104,10 +107,12 @@
               id="async-mode"
               v-model="asyncMode"
               type="checkbox"
-              class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              :disabled="repos.length > 0"
+              class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed"
             />
-            <label for="async-mode" class="ml-2 block text-sm text-gray-900">
+            <label for="async-mode" class="ml-2 block text-sm text-gray-900" :class="{ 'text-gray-500': repos.length > 0 }">
               Run in background (for long-running operations)
+              <span v-if="repos.length > 0" class="text-xs text-gray-500 ml-1">(required when using repositories)</span>
             </label>
           </div>
         </div>
@@ -321,18 +326,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useModelsStore } from '../stores/models';
 import { useUIStore } from '../stores/ui';
 import { generateTasks, bulkCreateTasks, getJobStatus } from '../api/endpoints';
-import type { TaskGenerationResponse, TaskDetail, BatchResponse, BulkCreateTasksResponse } from '../types/api';
+import type { TaskGenerationResponse, TaskDetail, BatchResponse, BulkCreateTasksResponse, RepoInput } from '../types/api';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import PromptViewer from '../components/PromptViewer.vue';
 import PromptResubmitModal from '../components/PromptResubmitModal.vue';
 import TaskPreviewModal from '../components/TaskPreviewModal.vue';
 import TaskEditModal from '../components/TaskEditModal.vue';
 import JobStatusCard from '../components/JobStatusCard.vue';
+import RepoSelector from '../components/RepoSelector.vue';
 import { useJobPolling } from '../composables/useJobPolling';
 import { useJobUrl } from '../composables/useJobUrl';
 import { error, sanitizeError } from '../utils/logger';
@@ -349,7 +355,16 @@ const additionalContext = ref('');
 const contextInherited = ref(false);
 const contextInheritedFrom = ref('Inherited from previous operation');
 const generateTestCases = ref(false);
+const repos = ref<RepoInput[]>([]);
 const asyncMode = ref(true);
+
+// Auto-enable async mode when repos are added
+watch(repos, (newRepos) => {
+  if (newRepos.length > 0) {
+    asyncMode.value = true;
+  }
+}, { deep: true });
+
 const loading = ref(false);
 const response = ref<TaskGenerationResponse | null>(null);
 const tasks = ref<TaskDetail[]>([]);
@@ -584,6 +599,7 @@ async function handleGenerate() {
       additional_context: additionalContext.value || undefined,
       async_mode: asyncMode.value,
       generate_test_cases: generateTestCases.value,
+      repos: repos.value.length > 0 ? repos.value : undefined,
     });
 
     // Check if it's a BatchResponse (async mode)

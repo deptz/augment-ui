@@ -28,6 +28,14 @@ export interface TicketResponse {
   additional_context?: string | null;
 }
 
+// Repository specification for OpenCode integration
+export interface RepoSpec {
+  url: string;
+  branch?: string;
+}
+
+export type RepoInput = string | RepoSpec;
+
 export interface TaskDetail {
   task_id?: string | null; // Temporary task ID (UUID) for dependency resolution before JIRA creation
   summary: string;
@@ -272,6 +280,7 @@ export interface JobStatus {
   story_keys?: string[] | null;
   prd_url?: string | null;
   additional_context?: string | null;
+  repos?: string[] | null;
 }
 
 export interface JobListResponse {

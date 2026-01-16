@@ -34,6 +34,7 @@ import type {
   BulkCreateTasksResponse,
   BulkCreateStoriesRequest,
   BulkCreateStoriesResponse,
+  RepoInput,
 } from '../types/api';
 
 // Get available LLM models and providers
@@ -49,11 +50,15 @@ export async function generateSingle(params: {
   llm_model?: string;
   additional_context?: string;
   async_mode?: boolean;
+  repos?: RepoInput[];
 }): Promise<TicketResponse | BatchResponse> {
+  // Force async_mode when repos are provided
+  const hasRepos = params.repos && params.repos.length > 0;
   const response = await apiClient.axios.post<TicketResponse | BatchResponse>('/generate/single', {
     ...params,
     update_jira: false, // Always preview mode
-    async_mode: params.async_mode ?? false,
+    async_mode: hasRepos ? true : (params.async_mode ?? false),
+    repos: params.repos,
   });
   return response.data;
 }
@@ -67,12 +72,16 @@ export async function generateTasks(params: {
   additional_context?: string;
   async_mode?: boolean;
   generate_test_cases?: boolean;
+  repos?: RepoInput[];
 }): Promise<TaskGenerationResponse | BatchResponse> {
+  // Force async_mode when repos are provided
+  const hasRepos = params.repos && params.repos.length > 0;
   const response = await apiClient.axios.post<TaskGenerationResponse | BatchResponse>('/plan/tasks/generate', {
     ...params,
     dry_run: true, // Always dry run mode
-    async_mode: params.async_mode ?? false,
+    async_mode: hasRepos ? true : (params.async_mode ?? false),
     generate_test_cases: params.generate_test_cases ?? false,
+    repos: params.repos,
   });
   return response.data;
 }
@@ -85,11 +94,15 @@ export async function analyzeStoryCoverage(params: {
   llm_model?: string;
   additional_context?: string;
   async_mode?: boolean;
+  repos?: RepoInput[];
 }): Promise<StoryCoverageResponse | BatchResponse> {
+  // Force async_mode when repos are provided
+  const hasRepos = params.repos && params.repos.length > 0;
   const response = await apiClient.axios.post<StoryCoverageResponse | BatchResponse>('/analyze/story-coverage', {
     ...params,
     include_test_cases: params.include_test_cases ?? true,
-    async_mode: params.async_mode ?? false,
+    async_mode: hasRepos ? true : (params.async_mode ?? false),
+    repos: params.repos,
   });
   return response.data;
 }

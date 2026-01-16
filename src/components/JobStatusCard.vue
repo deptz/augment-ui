@@ -119,7 +119,37 @@
           {{ job.prd_url }}
         </a>
       </div>
-      
+
+      <!-- Repositories (for OpenCode jobs) -->
+      <div v-if="job?.repos && job.repos.length > 0" class="flex items-start gap-2">
+        <span class="text-xs font-medium text-gray-500 min-w-[70px] pt-0.5">Repos:</span>
+        <div class="flex-1 text-sm font-mono text-gray-900">
+          <template v-if="!expandedRepos && job.repos.length > 3">
+            <div v-for="repo in job.repos.slice(0, 3)" :key="repo" class="truncate max-w-md" :title="repo">
+              {{ repo }}
+            </div>
+            <button
+              @click="expandedRepos = true"
+              class="text-indigo-600 hover:text-indigo-800 font-medium underline"
+            >
+              +{{ job.repos.length - 3 }} more
+            </button>
+          </template>
+          <template v-else>
+            <div v-for="repo in job.repos" :key="repo" class="truncate max-w-md" :title="repo">
+              {{ repo }}
+            </div>
+            <button
+              v-if="job.repos.length > 3 && expandedRepos"
+              @click="expandedRepos = false"
+              class="text-indigo-600 hover:text-indigo-800 font-medium underline"
+            >
+              show less
+            </button>
+          </template>
+        </div>
+      </div>
+
       <!-- Additional Context (collapsible) -->
       <div v-if="jobContext" class="mt-2">
         <button
@@ -247,12 +277,14 @@ defineEmits<{
 // Expandable state for multiple keys
 const expandedTicketKeys = ref(false);
 const expandedStoryKeys = ref(false);
+const expandedRepos = ref(false);
 const expandedContext = ref(false);
 
 // Reset expanded state when job changes
 watch(() => props.job?.job_id, () => {
   expandedTicketKeys.value = false;
   expandedStoryKeys.value = false;
+  expandedRepos.value = false;
   expandedContext.value = false;
 });
 
@@ -279,7 +311,9 @@ const hasKeys = computed(() => {
     props.job.ticket_key ||
     (props.job.ticket_keys && props.job.ticket_keys.length > 0) ||
     props.job.story_key ||
-    (props.job.story_keys && props.job.story_keys.length > 0)
+    (props.job.story_keys && props.job.story_keys.length > 0) ||
+    props.job.prd_url ||
+    (props.job.repos && props.job.repos.length > 0)
   );
 });
 

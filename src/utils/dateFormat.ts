@@ -1,4 +1,27 @@
 /**
+ * Format a date string to a readable format (simpler version)
+ * @param dateString - ISO 8601 date string (from API)
+ * @returns Formatted date string
+ */
+export function formatDate(dateString: string | null | undefined): string {
+  if (!dateString) return '';
+  
+  try {
+    const date = new Date(dateString);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) {
+      return dateString;
+    }
+    
+    // Format in user's local timezone
+    return date.toLocaleString();
+  } catch {
+    return dateString;
+  }
+}
+
+/**
  * Format a date string to YYYY-MM-DD HH:MM:SS in user's local timezone
  * @param dateString - ISO 8601 date string (from API)
  * @returns Formatted date string in user's timezone

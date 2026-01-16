@@ -45,6 +45,18 @@ const routes: RouteRecordRaw[] = [
     meta: { title: 'Settings' },
   },
   {
+    path: '/draft-pr',
+    name: 'DraftPRCreate',
+    component: () => import('../views/DraftPRCreateView.vue'),
+    meta: { title: 'Create Draft PR' },
+  },
+  {
+    path: '/draft-pr/jobs/:id',
+    name: 'DraftPRJobDetail',
+    component: () => import('../views/DraftPRJobDetailView.vue'),
+    meta: { title: 'Draft PR Job' },
+  },
+  {
     path: '/jobs',
     name: 'Jobs',
     component: () => import('../views/JobsView.vue'),

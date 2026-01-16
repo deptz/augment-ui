@@ -74,6 +74,11 @@ export const JOB_TYPES: Record<string, JobTypeDefinition> = {
     value: 'story_creation',
     label: 'Story Creation',
     description: 'Story creation operations'
+  },
+  draft_pr: {
+    value: 'draft_pr',
+    label: 'Draft PR',
+    description: 'Draft PR creation from JIRA stories'
   }
 };
 

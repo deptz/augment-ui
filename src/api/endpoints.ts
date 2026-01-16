@@ -35,6 +35,12 @@ import type {
   BulkCreateStoriesRequest,
   BulkCreateStoriesResponse,
   RepoInput,
+  CreateDraftPRRequest,
+  DraftPRJobStatus,
+  PlanVersion,
+  RevisePlanRequest,
+  PlanComparison,
+  PipelineStage,
 } from '../types/api';
 
 // Get available LLM models and providers
@@ -340,6 +346,90 @@ export async function bulkCreateStories(
       create_tickets: request.create_tickets ?? false,
       async_mode: request.async_mode ?? false,
     }
+  );
+  return response.data;
+}
+
+// Draft PR Orchestrator endpoints
+export async function createDraftPR(
+  request: CreateDraftPRRequest
+): Promise<BatchResponse> {
+  const response = await apiClient.axios.post<BatchResponse>(
+    '/draft-pr/create',
+    request
+  );
+  return response.data;
+}
+
+export async function getDraftPRJob(job_id: string): Promise<DraftPRJobStatus> {
+  const response = await apiClient.axios.get<DraftPRJobStatus>(
+    `/draft-pr/jobs/${job_id}`
+  );
+  return response.data;
+}
+
+export async function getLatestPlan(job_id: string): Promise<PlanVersion> {
+  const response = await apiClient.axios.get<PlanVersion>(
+    `/draft-pr/jobs/${job_id}/plan`
+  );
+  return response.data;
+}
+
+export async function getPlanVersion(
+  job_id: string,
+  version: number
+): Promise<PlanVersion> {
+  const response = await apiClient.axios.get<PlanVersion>(
+    `/draft-pr/jobs/${job_id}/plans/${version}`
+  );
+  return response.data;
+}
+
+export async function revisePlan(
+  job_id: string,
+  request: RevisePlanRequest
+): Promise<{ plan_version: number; plan_hash: string; changes_summary: string }> {
+  const response = await apiClient.axios.post(
+    `/draft-pr/jobs/${job_id}/revise-plan`,
+    request
+  );
+  return response.data;
+}
+
+export async function comparePlans(
+  job_id: string,
+  from_version: number,
+  to_version: number
+): Promise<PlanComparison> {
+  const response = await apiClient.axios.get<PlanComparison>(
+    `/draft-pr/jobs/${job_id}/plans/compare`,
+    { params: { from_version, to_version } }
+  );
+  return response.data;
+}
+
+export async function approvePlan(
+  job_id: string,
+  plan_hash: string
+): Promise<{ approved: boolean; plan_hash: string; stage: PipelineStage }> {
+  const response = await apiClient.axios.post(
+    `/draft-pr/jobs/${job_id}/approve`,
+    { plan_hash }
+  );
+  return response.data;
+}
+
+export async function listArtifacts(job_id: string): Promise<{ artifacts: string[] }> {
+  const response = await apiClient.axios.get(`/draft-pr/jobs/${job_id}/artifacts`);
+  return response.data;
+}
+
+export async function getArtifact(
+  job_id: string,
+  artifact_type: string
+): Promise<any> {
+  const response = await apiClient.axios.get(
+    `/draft-pr/jobs/${job_id}/artifacts/${artifact_type}`
   );
   return response.data;
 }

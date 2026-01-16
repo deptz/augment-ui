@@ -78,6 +78,13 @@
                     >
                       Sprint Planning
                     </router-link>
+                    <router-link
+                      to="/draft-pr"
+                      @click="showToolsDropdown = false"
+                      class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      Draft PR
+                    </router-link>
                   </div>
                 </div>
               </div>
@@ -154,7 +161,7 @@ const availableModels = computed(() => {
 });
 
 const isToolsActive = computed(() => {
-  const toolsRoutes = ['/single-ticket', '/task-breakdown', '/story-coverage', '/prd-sync', '/sprint-planning'];
+  const toolsRoutes = ['/single-ticket', '/task-breakdown', '/story-coverage', '/prd-sync', '/sprint-planning', '/draft-pr'];
   return toolsRoutes.includes(route.path);
 });
 

@@ -150,6 +150,19 @@
         </div>
       </div>
 
+      <!-- Pipeline Stage (for draft_pr jobs) -->
+      <div v-if="draftPRStage" class="flex items-center gap-2">
+        <span class="text-xs font-medium text-gray-500 min-w-[70px]">Stage:</span>
+        <span
+          :class="[
+            'inline-flex items-center px-2 py-1 rounded text-xs font-medium',
+            getStageBadgeClass(draftPRStage)
+          ]"
+        >
+          {{ getStageLabel(draftPRStage) }}
+        </span>
+      </div>
+
       <!-- Additional Context (collapsible) -->
       <div v-if="jobContext" class="mt-2">
         <button
@@ -253,7 +266,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import type { JobStatus } from '../types/api';
+import type { JobStatus, PipelineStage, DraftPRJobStatus } from '../types/api';
 import { getJobTypeLabel } from '../utils/jobTypes';
 import { formatDateTime, formatDuration } from '../utils/dateFormat';
 
@@ -305,6 +318,45 @@ const jobContext = computed(() => {
   return null;
 });
 
+const draftPRJob = computed<DraftPRJobStatus | null>(() => {
+  if (!props.job || props.job.job_type !== 'draft_pr') return null;
+  return props.job as DraftPRJobStatus;
+});
+
+const draftPRStage = computed<PipelineStage | null>(() => {
+  return draftPRJob.value?.stage || null;
+});
+
+function getStageLabel(stage: PipelineStage): string {
+  const labels: Record<PipelineStage, string> = {
+    CREATED: 'Created',
+    PLANNING: 'Planning',
+    WAITING_FOR_APPROVAL: 'Waiting for Approval',
+    REVISING: 'Revising',
+    APPLYING: 'Applying',
+    VERIFYING: 'Verifying',
+    PACKAGING: 'Packaging',
+    DRAFTING: 'Drafting',
+    COMPLETED: 'Completed',
+    FAILED: 'Failed',
+  };
+  return labels[stage] || stage;
+}
+
+function getStageBadgeClass(stage: PipelineStage): string {
+  switch (stage) {
+    case 'COMPLETED':
+      return 'bg-green-100 text-green-800';
+    case 'FAILED':
+      return 'bg-red-100 text-red-800';
+    case 'WAITING_FOR_APPROVAL':
+    case 'REVISING':
+      return 'bg-yellow-100 text-yellow-800';
+    default:
+      return 'bg-blue-100 text-blue-800';
+  }
+}
+
 const hasKeys = computed(() => {
   if (!props.job) return false;
   return !!(
@@ -313,7 +365,8 @@ const hasKeys = computed(() => {
     props.job.story_key ||
     (props.job.story_keys && props.job.story_keys.length > 0) ||
     props.job.prd_url ||
-    (props.job.repos && props.job.repos.length > 0)
+    (props.job.repos && props.job.repos.length > 0) ||
+    draftPRStage.value
   );
 });
 

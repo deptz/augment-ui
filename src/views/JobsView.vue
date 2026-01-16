@@ -303,6 +303,11 @@ function getRouteForJob(job: JobStatus): string | null {
       return '/sprint-planning';
     }
     
+    // Check for draft_pr (must be before single ticket check)
+    if (jobType === 'draft_pr' || jobType.includes('draft') || jobType.includes('pr')) {
+      return `/draft-pr/jobs/${job.job_id}`;
+    }
+    
     // Check for single ticket
     if (jobType === 'single' || jobType.includes('ticket')) {
       return '/single-ticket';

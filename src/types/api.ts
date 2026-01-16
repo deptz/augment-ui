@@ -600,6 +600,81 @@ export interface BulkCreateStoriesResponse {
   message: string;
 }
 
+// Draft PR Orchestrator types
+export type PipelineStage =
+  | 'CREATED'
+  | 'PLANNING'
+  | 'WAITING_FOR_APPROVAL'
+  | 'REVISING'
+  | 'APPLYING'
+  | 'VERIFYING'
+  | 'PACKAGING'
+  | 'DRAFTING'
+  | 'COMPLETED'
+  | 'FAILED';
+
+export interface PlanSpec {
+  summary: string;
+  scope: {
+    files: Array<{ path: string; change: string }>;
+  };
+  happy_paths: string[];
+  edge_cases: string[];
+  failure_modes: Array<{
+    trigger: string;
+    impact: string;
+    mitigation: string;
+  }>;
+  assumptions: string[];
+  unknowns: string[];
+  tests: Array<{ type: string; target: string }>;
+  rollback: string[];
+  cross_repo_impacts: any[];
+}
+
+export interface PlanVersion {
+  version: number;
+  plan_hash: string;
+  plan_spec: PlanSpec;
+  created_at: string;
+}
+
+export interface CreateDraftPRRequest {
+  story_key: string;
+  repos: Array<{ url: string; branch?: string }>;
+  scope?: { files?: string[] };
+  additional_context?: string;
+  mode: 'normal' | 'yolo';
+}
+
+export interface RevisePlanRequest {
+  feedback: string;
+  specific_concerns?: string[];
+  requested_changes?: string;
+  feedback_type: 'general' | 'scope' | 'tests' | 'safety' | 'other';
+}
+
+export interface PlanComparison {
+  from_version: number;
+  to_version: number;
+  changes: {
+    added: string[];
+    modified: string[];
+    removed: string[];
+  };
+  summary: string;
+  changed_sections: string[];
+}
+
+// Extended JobStatus for draft_pr
+export interface DraftPRJobStatus extends JobStatus {
+  stage?: PipelineStage | null;
+  plan_versions?: PlanVersion[] | null;
+  approved_plan_hash?: string | null;
+  workspace_fingerprint?: any;
+  artifacts?: Record<string, string>;
+}
+
 
 
 

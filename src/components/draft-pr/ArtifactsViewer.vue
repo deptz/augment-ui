@@ -97,23 +97,40 @@
           </button>
         </div>
         
-        <div v-if="artifactLoading" class="text-center py-8">
-          <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-        </div>
+        <!-- Specialized viewers -->
+        <GitDiffViewer
+          v-if="selectedArtifact === 'git_diff'"
+          :job-id="jobId"
+        />
+        <ValidationLogsViewer
+          v-else-if="selectedArtifact === 'validation_logs'"
+          :job-id="jobId"
+        />
+        <PRMetadataViewer
+          v-else-if="selectedArtifact === 'pr_metadata'"
+          :job-id="jobId"
+        />
         
-        <div v-else-if="artifactError" class="text-center py-8">
-          <p class="text-red-600">{{ artifactError }}</p>
-        </div>
-        
-        <div v-else-if="artifactContent" class="max-h-96 overflow-auto">
-          <pre
-            v-if="isJsonArtifact(selectedArtifact)"
-            class="bg-gray-50 p-4 rounded text-sm overflow-x-auto"
-          ><code>{{ formatJson(artifactContent) }}</code></pre>
-          <pre
-            v-else
-            class="bg-gray-50 p-4 rounded text-sm overflow-x-auto whitespace-pre-wrap"
-          ><code>{{ artifactContent }}</code></pre>
+        <!-- Generic viewer for other artifacts -->
+        <div v-else>
+          <div v-if="artifactLoading" class="text-center py-8">
+            <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+          </div>
+          
+          <div v-else-if="artifactError" class="text-center py-8">
+            <p class="text-red-600">{{ artifactError }}</p>
+          </div>
+          
+          <div v-else-if="artifactContent" class="max-h-96 overflow-auto">
+            <pre
+              v-if="isJsonArtifact(selectedArtifact)"
+              class="bg-gray-50 p-4 rounded text-sm overflow-x-auto"
+            ><code>{{ formatJson(artifactContent) }}</code></pre>
+            <pre
+              v-else
+              class="bg-gray-50 p-4 rounded text-sm overflow-x-auto whitespace-pre-wrap"
+            ><code>{{ artifactContent }}</code></pre>
+          </div>
         </div>
       </div>
     </div>
@@ -123,6 +140,9 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { listArtifacts, getArtifact } from '@/api/endpoints';
+import GitDiffViewer from './GitDiffViewer.vue';
+import ValidationLogsViewer from './ValidationLogsViewer.vue';
+import PRMetadataViewer from './PRMetadataViewer.vue';
 
 interface Props {
   jobId: string;
@@ -143,31 +163,54 @@ onMounted(async () => {
 });
 
 async function loadArtifacts() {
+  if (!props.jobId || typeof props.jobId !== 'string' || props.jobId.trim().length === 0) {
+    error.value = 'Invalid job ID';
+    loading.value = false;
+    return;
+  }
+
   try {
     loading.value = true;
     error.value = null;
     const response = await listArtifacts(props.jobId);
-    artifacts.value = response.artifacts;
+    if (response && Array.isArray(response.artifacts)) {
+      artifacts.value = response.artifacts.filter(a => a && typeof a === 'string' && a.trim().length > 0);
+    } else {
+      artifacts.value = [];
+    }
   } catch (err: any) {
     error.value = err.response?.data?.detail || err.message || 'Failed to load artifacts';
+    artifacts.value = [];
   } finally {
     loading.value = false;
   }
 }
 
 async function viewArtifact(artifact: string) {
+  if (!artifact || typeof artifact !== 'string' || artifact.trim().length === 0) {
+    return;
+  }
+
+  if (!props.jobId || typeof props.jobId !== 'string' || props.jobId.trim().length === 0) {
+    error.value = 'Invalid job ID';
+    return;
+  }
+
   selectedArtifact.value = artifact;
   artifactContent.value = null;
   artifactError.value = null;
-  artifactLoading.value = true;
-
-  try {
-    const content = await getArtifact(props.jobId, artifact);
-    artifactContent.value = content;
-  } catch (err: any) {
-    artifactError.value = err.response?.data?.detail || err.message || 'Failed to load artifact';
-  } finally {
-    artifactLoading.value = false;
+  
+  // Only show loading for non-specialized artifacts
+  if (!['git_diff', 'validation_logs', 'pr_metadata'].includes(artifact)) {
+    artifactLoading.value = true;
+    try {
+      const content = await getArtifact(props.jobId, artifact);
+      artifactContent.value = content;
+    } catch (err: any) {
+      artifactError.value = err.response?.data?.detail || err.message || 'Failed to load artifact';
+    } finally {
+      artifactLoading.value = false;
+    }
   }
 }
 
@@ -178,16 +221,41 @@ function closeModal() {
 }
 
 async function downloadArtifact(artifact: string) {
+  if (!artifact || typeof artifact !== 'string' || artifact.trim().length === 0) {
+    error.value = 'Invalid artifact name';
+    return;
+  }
+
+  if (!props.jobId || typeof props.jobId !== 'string' || props.jobId.trim().length === 0) {
+    error.value = 'Invalid job ID';
+    return;
+  }
+
   try {
     const content = await getArtifact(props.jobId, artifact);
-    const dataStr = typeof content === 'string' ? content : JSON.stringify(content, null, 2);
+    if (content === null || content === undefined) {
+      error.value = 'Artifact content is empty';
+      return;
+    }
+    
+    const dataStr = typeof content === 'string' 
+      ? content 
+      : JSON.stringify(content, null, 2);
+    
+    if (!dataStr || dataStr.length === 0) {
+      error.value = 'Artifact content is empty';
+      return;
+    }
+    
     const dataBlob = new Blob([dataStr], {
       type: isJsonArtifact(artifact) ? 'application/json' : 'text/plain',
     });
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${artifact}.${isJsonArtifact(artifact) ? 'json' : 'txt'}`;
+    // Sanitize artifact name for filename
+    const sanitizedName = artifact.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+    link.download = `${sanitizedName}.${isJsonArtifact(artifact) ? 'json' : 'txt'}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

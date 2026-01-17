@@ -1,4 +1,4 @@
-import { ref, computed, type Ref } from 'vue';
+import { ref, computed, watch, type Ref } from 'vue';
 import { useJobPolling } from './useJobPolling';
 import { getDraftPRJob, approvePlan, revisePlan } from '../api/endpoints';
 import type { DraftPRJobStatus, PipelineStage, PlanVersion, RevisePlanRequest } from '../types/api';
@@ -27,10 +27,12 @@ export function useDraftPRJob(jobId: Ref<string | null>) {
     onComplete: (job) => {
       draftPRJob.value = job as DraftPRJobStatus;
     },
-    onStatusChange: () => {
+    onStatusChange: async () => {
       // Refresh draft PR specific data when status changes
       if (jobId.value) {
-        refreshDraftPRJob();
+        await refreshDraftPRJob();
+        // Check for auto-approval after status change
+        await checkAndAutoApprove();
       }
     },
   });
@@ -44,8 +46,7 @@ export function useDraftPRJob(jobId: Ref<string | null>) {
   });
   const approvedPlanHash = computed<string | null>(() => draftPRJob.value?.approved_plan_hash || null);
   const isYoloMode = computed(() => {
-    // Check if mode is yolo from job metadata or results
-    return draftPRJob.value?.progress?.mode === 'yolo';
+    return draftPRJob.value?.mode === 'yolo';
   });
 
   // Get polling interval based on stage
@@ -70,22 +71,70 @@ export function useDraftPRJob(jobId: Ref<string | null>) {
 
   // Refresh draft PR job data
   async function refreshDraftPRJob() {
-    if (!jobId.value) return;
+    if (!jobId.value || typeof jobId.value !== 'string' || jobId.value.trim().length === 0) {
+      return;
+    }
 
     try {
       const job = await getDraftPRJob(jobId.value);
       draftPRJob.value = job;
     } catch (err: any) {
       console.error('Failed to refresh draft PR job:', err);
+      // Don't set error here - let the base polling handle it
+    }
+  }
+
+  // Track if we've already attempted auto-approval to prevent multiple attempts
+  const autoApprovalAttempted = ref(false);
+
+  // Auto-approve plan in YOLO mode
+  async function checkAndAutoApprove() {
+    if (!jobId.value || !draftPRJob.value) return;
+
+    // Prevent multiple auto-approval attempts
+    if (autoApprovalAttempted.value) return;
+
+    // Only auto-approve if:
+    // 1. Mode is YOLO
+    // 2. Stage is WAITING_FOR_APPROVAL
+    // 3. There's a latest plan available
+    // 4. Plan has a valid hash
+    // 5. Plan hasn't been approved yet
+    // 6. We haven't already attempted approval
+    if (
+      isYoloMode.value &&
+      currentStage.value === 'WAITING_FOR_APPROVAL' &&
+      latestPlan.value &&
+      latestPlan.value.plan_hash &&
+      typeof latestPlan.value.plan_hash === 'string' &&
+      latestPlan.value.plan_hash.trim().length > 0 &&
+      !approvedPlanHash.value &&
+      !autoApprovalAttempted.value
+    ) {
+      autoApprovalAttempted.value = true;
+      try {
+        uiStore.showInfo('YOLO mode: Auto-approving plan...');
+        await approvePlanHash(latestPlan.value.plan_hash);
+      } catch (err) {
+        // Reset flag on error so we can retry if needed
+        autoApprovalAttempted.value = false;
+        // Error already handled in approvePlanHash
+        console.error('Auto-approval failed:', err);
+      }
     }
   }
 
   // Start polling with draft PR specific refresh
   async function startDraftPRPolling() {
-    if (!jobId.value) return;
+    if (!jobId.value || typeof jobId.value !== 'string' || jobId.value.trim().length === 0) {
+      return;
+    }
 
     // Initial load
     await refreshDraftPRJob();
+
+    // Check for YOLO auto-approval on initial load
+    await checkAndAutoApprove();
 
     // Start base polling
     baseStartPolling();
@@ -98,10 +147,34 @@ export function useDraftPRJob(jobId: Ref<string | null>) {
     // modifying useJobPolling to support reactive intervals, which is a larger change
   }
 
+  // Watch for stage changes to trigger auto-approval
+  watch(currentStage, async (newStage, oldStage) => {
+    // When stage changes to WAITING_FOR_APPROVAL, check for auto-approval
+    if (newStage === 'WAITING_FOR_APPROVAL' && oldStage !== 'WAITING_FOR_APPROVAL') {
+      // Reset auto-approval flag when entering WAITING_FOR_APPROVAL stage
+      autoApprovalAttempted.value = false;
+      await refreshDraftPRJob();
+      await checkAndAutoApprove();
+    } else if (newStage !== 'WAITING_FOR_APPROVAL') {
+      // Reset flag when leaving WAITING_FOR_APPROVAL stage
+      autoApprovalAttempted.value = false;
+    }
+  });
+
   // Approve plan
   async function approvePlanHash(planHash: string) {
-    if (!jobId.value) {
+    if (!jobId.value || typeof jobId.value !== 'string' || jobId.value.trim().length === 0) {
       uiStore.showError('Job ID is required');
+      return;
+    }
+
+    if (!planHash || typeof planHash !== 'string' || planHash.trim().length === 0) {
+      uiStore.showError('Plan hash is required');
+      return;
+    }
+
+    // Prevent duplicate approvals
+    if (isApproving.value) {
       return;
     }
 
@@ -133,8 +206,18 @@ export function useDraftPRJob(jobId: Ref<string | null>) {
 
   // Revise plan
   async function revisePlanWithFeedback(feedback: RevisePlanRequest) {
-    if (!jobId.value) {
+    if (!jobId.value || typeof jobId.value !== 'string' || jobId.value.trim().length === 0) {
       uiStore.showError('Job ID is required');
+      return;
+    }
+
+    if (!feedback || !feedback.feedback || typeof feedback.feedback !== 'string' || feedback.feedback.trim().length === 0) {
+      uiStore.showError('Feedback is required');
+      return;
+    }
+
+    // Prevent duplicate revisions
+    if (isRevising.value) {
       return;
     }
 

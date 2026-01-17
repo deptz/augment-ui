@@ -4,13 +4,19 @@
     <div v-if="stage === 'PLANNING'" class="text-center py-12">
       <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
       <h3 class="text-lg font-medium text-gray-900 mb-2">Generating Plan...</h3>
-      <p class="text-gray-500">This may take 30-60 seconds</p>
+      <p v-if="progressMessage" class="text-gray-700 mt-2">{{ progressMessage }}</p>
+      <p v-else class="text-gray-500">This may take 30-60 seconds</p>
     </div>
 
     <!-- WAITING_FOR_APPROVAL Stage -->
     <div v-else-if="stage === 'WAITING_FOR_APPROVAL'">
+      <div v-if="!latestPlan" class="text-center py-12">
+        <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
+        <h3 class="text-lg font-medium text-gray-900 mb-2">Loading Plan...</h3>
+        <p class="text-gray-500">Waiting for plan to be generated</p>
+      </div>
       <PlanDisplay
-        v-if="latestPlan"
+        v-else
         :plan="latestPlan"
         :show-actions="!isYoloMode"
         :show-compare="planVersions && planVersions.length > 1"
@@ -21,7 +27,7 @@
       <PlanRevisionForm
         v-if="showRevisionForm"
         @submit="handleRevise"
-        @cancel="showRevisionForm = false"
+        @cancel="handleCancelRevision"
       />
     </div>
 
@@ -29,7 +35,8 @@
     <div v-else-if="stage === 'REVISING'" class="text-center py-12">
       <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
       <h3 class="text-lg font-medium text-gray-900 mb-2">Generating Revised Plan...</h3>
-      <p class="text-gray-500">Incorporating your feedback</p>
+      <p v-if="progressMessage" class="text-gray-700 mt-2">{{ progressMessage }}</p>
+      <p v-else class="text-gray-500">Incorporating your feedback</p>
       <div v-if="previousPlan" class="mt-6">
         <p class="text-sm text-gray-500 mb-2">Previous plan:</p>
         <PlanDisplay :plan="previousPlan" :show-actions="false" :show-compare="false" />
@@ -40,7 +47,8 @@
     <div v-else-if="stage === 'APPLYING'" class="text-center py-12">
       <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
       <h3 class="text-lg font-medium text-gray-900 mb-2">Applying Code Changes...</h3>
-      <p class="text-gray-500">Implementing the approved plan</p>
+      <p v-if="progressMessage" class="text-gray-700 mt-2">{{ progressMessage }}</p>
+      <p v-else class="text-gray-500">Implementing the approved plan</p>
       <div v-if="approvedPlan" class="mt-6 text-left">
         <p class="text-sm font-medium text-gray-700 mb-2">Approved Plan Summary:</p>
         <p class="text-sm text-gray-600">{{ approvedPlan.plan_spec.summary }}</p>
@@ -51,7 +59,8 @@
     <div v-else-if="stage === 'VERIFYING'" class="text-center py-12">
       <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
       <h3 class="text-lg font-medium text-gray-900 mb-2">Running Verification...</h3>
-      <p class="text-gray-500">Running tests, lint, and build checks</p>
+      <p v-if="progressMessage" class="text-gray-700 mt-2">{{ progressMessage }}</p>
+      <p v-else class="text-gray-500">Running tests, lint, and build checks</p>
       <div v-if="verificationStatus" class="mt-6 text-left bg-gray-50 rounded-lg p-4">
         <pre class="text-sm text-gray-700 whitespace-pre-wrap">{{ verificationStatus }}</pre>
       </div>
@@ -61,14 +70,16 @@
     <div v-else-if="stage === 'PACKAGING'" class="text-center py-12">
       <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
       <h3 class="text-lg font-medium text-gray-900 mb-2">Generating PR Diff and Metadata...</h3>
-      <p class="text-gray-500">Preparing the pull request</p>
+      <p v-if="progressMessage" class="text-gray-700 mt-2">{{ progressMessage }}</p>
+      <p v-else class="text-gray-500">Preparing the pull request</p>
     </div>
 
     <!-- DRAFTING Stage -->
     <div v-else-if="stage === 'DRAFTING'" class="text-center py-12">
       <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
       <h3 class="text-lg font-medium text-gray-900 mb-2">Creating Draft PR...</h3>
-      <p class="text-gray-500">Finalizing the pull request</p>
+      <p v-if="progressMessage" class="text-gray-700 mt-2">{{ progressMessage }}</p>
+      <p v-else class="text-gray-500">Finalizing the pull request</p>
     </div>
 
     <!-- COMPLETED Stage -->
@@ -79,6 +90,11 @@
         </svg>
       </div>
       <h3 class="text-lg font-medium text-gray-900 mb-2">Draft PR Created Successfully!</h3>
+      <div v-if="branchName" class="mt-2 mb-4">
+        <p class="text-sm text-gray-600">
+          Branch: <span class="font-mono text-gray-900">{{ branchName }}</span>
+        </p>
+      </div>
       <div v-if="prUrl" class="mt-6">
         <a
           :href="prUrl"
@@ -116,7 +132,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import type { PipelineStage, PlanVersion } from '@/types/api';
 import PlanDisplay from './PlanDisplay.vue';
 import PlanRevisionForm from './PlanRevisionForm.vue';
@@ -129,6 +145,8 @@ interface Props {
   verificationStatus?: string | null;
   prUrl?: string | null;
   errorMessage?: string | null;
+  progressMessage?: string | null;
+  branchName?: string | null;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -139,6 +157,8 @@ const props = withDefaults(defineProps<Props>(), {
   verificationStatus: null,
   prUrl: null,
   errorMessage: null,
+  progressMessage: null,
+  branchName: null,
 });
 
 const emit = defineEmits<{
@@ -148,6 +168,14 @@ const emit = defineEmits<{
 }>();
 
 const showRevisionForm = ref(false);
+
+// Watch for stage changes to close revision form when stage changes away from WAITING_FOR_APPROVAL
+watch(() => props.stage, (newStage, oldStage) => {
+  // Close form when leaving WAITING_FOR_APPROVAL stage (e.g., moving to REVISING)
+  if (oldStage === 'WAITING_FOR_APPROVAL' && newStage !== 'WAITING_FOR_APPROVAL') {
+    showRevisionForm.value = false;
+  }
+});
 
 const latestPlan = computed<PlanVersion | null>(() => {
   if (!props.planVersions || props.planVersions.length === 0) return null;
@@ -165,14 +193,19 @@ const approvedPlan = computed<PlanVersion | null>(() => {
 });
 
 function handleApprove() {
-  if (latestPlan.value) {
+  if (latestPlan.value && latestPlan.value.plan_hash) {
     emit('approve', latestPlan.value.plan_hash);
   }
 }
 
 function handleRevise(data: any) {
-  showRevisionForm.value = false;
   emit('revise', data);
+  // Don't close form immediately - let parent handle success/error
+  // Form will be closed on success or user can cancel on error
+}
+
+function handleCancelRevision() {
+  showRevisionForm.value = false;
 }
 
 function handleCompare() {

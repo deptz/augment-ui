@@ -34,6 +34,7 @@
             <span class="text-xs font-normal text-gray-500 ml-2">(1-5 repos)</span>
           </label>
           <RepoSelector
+            ref="repoSelectorRef"
             v-model="repos"
             :disabled="loading"
             :max-repos="5"
@@ -43,18 +44,61 @@
 
         <!-- Scope (Optional) -->
         <div>
-          <label for="scope" class="block text-sm font-medium text-gray-700">
-            Scope (Optional)
-          </label>
-          <textarea
-            id="scope"
-            v-model="scopeInput"
-            placeholder="e.g., src/api/, tests/"
-            rows="2"
-            :disabled="loading"
-            class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-          />
-          <p class="mt-1 text-xs text-gray-500">Comma-separated file paths or directories to limit scope</p>
+          <button
+            type="button"
+            @click="showScopeSection = !showScopeSection"
+            class="flex items-center justify-between w-full text-left"
+          >
+            <label class="block text-sm font-medium text-gray-700">
+              Scope (Optional)
+            </label>
+            <svg
+              :class="['w-5 h-5 text-gray-500 transition-transform', showScopeSection ? 'transform rotate-180' : '']"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          
+          <div v-if="showScopeSection" class="mt-3 space-y-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <!-- Include Paths -->
+            <div>
+              <label for="include-paths" class="block text-sm font-medium text-gray-700 mb-1">
+                Include Paths
+              </label>
+              <textarea
+                id="include-paths"
+                v-model="scopeIncludePaths"
+                placeholder="e.g., src/api/**, tests/**"
+                rows="3"
+                :disabled="loading"
+                class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed font-mono text-xs"
+              />
+              <p class="mt-1 text-xs text-gray-500">
+                Glob patterns for paths to include (one per line). Examples: <code class="bg-gray-200 px-1 rounded">src/api/**</code>, <code class="bg-gray-200 px-1 rounded">*.py</code>
+              </p>
+            </div>
+
+            <!-- Exclude Paths -->
+            <div>
+              <label for="exclude-paths" class="block text-sm font-medium text-gray-700 mb-1">
+                Exclude Paths
+              </label>
+              <textarea
+                id="exclude-paths"
+                v-model="scopeExcludePaths"
+                placeholder="e.g., tests/**, *.test.js"
+                rows="3"
+                :disabled="loading"
+                class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed font-mono text-xs"
+              />
+              <p class="mt-1 text-xs text-gray-500">
+                Glob patterns for paths to exclude (one per line). Examples: <code class="bg-gray-200 px-1 rounded">tests/**</code>, <code class="bg-gray-200 px-1 rounded">*.test.js</code>
+              </p>
+            </div>
+          </div>
         </div>
 
         <!-- Additional Context -->
@@ -173,17 +217,40 @@ const formData = ref<CreateDraftPRRequest>({
 });
 
 const repos = ref<RepoInput[]>([]);
-const scopeInput = ref('');
+const repoSelectorRef = ref<InstanceType<typeof RepoSelector> | null>(null);
+const showScopeSection = ref(false);
+const scopeIncludePaths = ref('');
+const scopeExcludePaths = ref('');
 const loading = ref(false);
 const error = ref<string | null>(null);
 const existingJobId = ref<string | null>(null);
 
 const isFormValid = computed(() => {
-  return (
-    formData.value.story_key.trim().length > 0 &&
-    repos.value.length > 0 &&
-    repos.value.length <= 5
-  );
+  // Check basic requirements
+  if (!formData.value.story_key || formData.value.story_key.trim().length === 0) {
+    return false;
+  }
+
+  if (repos.value.length === 0 || repos.value.length > 5) {
+    return false;
+  }
+
+  // Check for repo selector errors if ref is available
+  if (repoSelectorRef.value) {
+    if (repoSelectorRef.value.hasErrors || repoSelectorRef.value.hasEmptyUrls) {
+      return false;
+    }
+  }
+
+  // Validate all repos have URLs
+  for (const repo of repos.value) {
+    const url = typeof repo === 'string' ? repo : repo.url;
+    if (!url || typeof url !== 'string' || url.trim().length === 0) {
+      return false;
+    }
+  }
+
+  return true;
 });
 
 async function handleSubmit() {
@@ -196,32 +263,56 @@ async function handleSubmit() {
   existingJobId.value = null;
 
   try {
+    // Validate repos have valid URLs
+    for (const repo of repos.value) {
+      const url = typeof repo === 'string' ? repo : repo.url;
+      if (!url || typeof url !== 'string' || url.trim().length === 0) {
+        error.value = 'All repositories must have a valid URL';
+        uiStore.showError(error.value);
+        return;
+      }
+    }
+
     // Convert repos to the format expected by API
     const reposFormatted = repos.value.map(repo => {
       if (typeof repo === 'string') {
-        return { url: repo };
+        return { url: repo.trim() };
       }
-      return { url: repo.url, branch: repo.branch };
+      return { 
+        url: repo.url.trim(), 
+        branch: repo.branch?.trim() || undefined 
+      };
     });
 
     // Parse scope if provided
-    let scope: { files?: string[] } | undefined;
-    if (scopeInput.value.trim()) {
-      const files = scopeInput.value
-        .split(',')
-        .map(f => f.trim())
-        .filter(f => f.length > 0);
-      if (files.length > 0) {
-        scope = { files };
+    let scope: { files?: string[]; include_paths?: string[]; exclude_paths?: string[] } | undefined;
+    
+    const includePaths = scopeIncludePaths.value
+      .split('\n')
+      .map(p => p.trim())
+      .filter(p => p.length > 0 && !/^\s*$/.test(p)); // Filter out empty and whitespace-only strings
+    
+    const excludePaths = scopeExcludePaths.value
+      .split('\n')
+      .map(p => p.trim())
+      .filter(p => p.length > 0 && !/^\s*$/.test(p)); // Filter out empty and whitespace-only strings
+    
+    if (includePaths.length > 0 || excludePaths.length > 0) {
+      scope = {};
+      if (includePaths.length > 0) {
+        scope.include_paths = includePaths;
+      }
+      if (excludePaths.length > 0) {
+        scope.exclude_paths = excludePaths;
       }
     }
 
     const request: CreateDraftPRRequest = {
       story_key: formData.value.story_key.trim(),
       repos: reposFormatted,
-      scope,
+      scope: scope && (scope.include_paths?.length > 0 || scope.exclude_paths?.length > 0) ? scope : undefined,
       additional_context: formData.value.additional_context?.trim() || undefined,
-      mode: formData.value.mode,
+      mode: formData.value.mode || 'normal',
     };
 
     const response = await createDraftPR(request);
@@ -231,9 +322,31 @@ async function handleSubmit() {
   } catch (err: any) {
     // Handle 409 Conflict (duplicate job)
     if (err.response?.status === 409) {
-      const jobId = err.response.headers['x-active-job-id'];
-      existingJobId.value = jobId;
-      error.value = `Story ${formData.value.story_key} is already being processed.`;
+      const jobId = err.response.headers['x-active-job-id'] || 
+                    err.response.headers['X-Active-Job-Id'] ||
+                    err.response?.data?.job_id;
+      if (jobId) {
+        existingJobId.value = jobId;
+        error.value = `Story ${formData.value.story_key} is already being processed.`;
+        uiStore.showError(error.value);
+      } else {
+        error.value = `Story ${formData.value.story_key} is already being processed. Please check existing jobs.`;
+        uiStore.showError(error.value);
+      }
+    } else if (err.response?.status === 400) {
+      // Handle validation errors
+      const detail = err.response?.data?.detail;
+      if (typeof detail === 'string') {
+        error.value = detail;
+      } else if (detail && typeof detail === 'object') {
+        // Handle field-specific errors
+        const errors = Object.entries(detail)
+          .map(([field, msg]) => `${field}: ${msg}`)
+          .join(', ');
+        error.value = `Validation error: ${errors}`;
+      } else {
+        error.value = 'Invalid request. Please check your input.';
+      }
       uiStore.showError(error.value);
     } else {
       error.value = err.response?.data?.detail || err.message || 'Failed to create Draft PR job';

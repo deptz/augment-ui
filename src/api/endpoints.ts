@@ -38,6 +38,7 @@ import type {
   CreateDraftPRRequest,
   DraftPRJobStatus,
   PlanVersion,
+  PlanVersionSummary,
   RevisePlanRequest,
   PlanComparison,
   PipelineStage,
@@ -371,6 +372,13 @@ export async function getDraftPRJob(job_id: string): Promise<DraftPRJobStatus> {
 export async function getLatestPlan(job_id: string): Promise<PlanVersion> {
   const response = await apiClient.axios.get<PlanVersion>(
     `/draft-pr/jobs/${job_id}/plan`
+  );
+  return response.data;
+}
+
+export async function listPlanVersions(job_id: string): Promise<{ job_id: string; plans: PlanVersionSummary[] }> {
+  const response = await apiClient.axios.get<{ job_id: string; plans: PlanVersionSummary[] }>(
+    `/draft-pr/jobs/${job_id}/plans`
   );
   return response.data;
 }

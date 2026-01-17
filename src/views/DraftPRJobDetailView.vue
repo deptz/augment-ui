@@ -66,6 +66,8 @@
             :verification-status="verificationStatus"
             :pr-url="prUrl"
             :error-message="errorMessage"
+            :progress-message="progressMessage"
+            :branch-name="branchName"
             @approve="handleApprove"
             @revise="handleRevise"
             @compare="handleCompare"
@@ -106,6 +108,17 @@
       <!-- Sidebar -->
       <div class="lg:col-span-1">
         <div class="space-y-6">
+          <!-- Plan Versions -->
+          <PlanVersionsSidebar
+            v-if="job"
+            :job-id="jobId"
+            :current-version="latestPlan?.version || null"
+            :latest-version="latestPlan?.version || null"
+            :initial-plan-versions="planVersionsSummary"
+            @version-click="handleVersionClick"
+            @compare-click="handleVersionCompareClick"
+          />
+
           <!-- Job Status Card -->
           <div v-if="job" class="bg-white shadow-sm rounded-lg p-4">
             <h3 class="text-sm font-medium text-gray-900 mb-3">Job Information</h3>
@@ -153,14 +166,23 @@ import { useDraftPRJob } from '@/composables/useDraftPRJob';
 import PipelineProgress from '@/components/draft-pr/PipelineProgress.vue';
 import StageView from '@/components/draft-pr/StageView.vue';
 import PlanComparisonView from '@/components/draft-pr/PlanComparisonView.vue';
+import PlanVersionsSidebar from '@/components/draft-pr/PlanVersionsSidebar.vue';
 import ArtifactsViewer from '@/components/draft-pr/ArtifactsViewer.vue';
 import { formatDate } from '@/utils/dateFormat';
 import { getJobTypeLabel } from '@/utils/jobTypes';
+import { useUIStore } from '@/stores/ui';
 
 const route = useRoute();
 const router = useRouter();
+const uiStore = useUIStore();
 
-const jobId = computed(() => route.params.id as string);
+const jobId = computed(() => {
+  const id = route.params.id;
+  if (!id || typeof id !== 'string' || id.trim().length === 0) {
+    return null;
+  }
+  return id as string;
+});
 
 const {
   job,
@@ -194,6 +216,35 @@ const canCancel = computed(() => {
 const verificationStatus = computed(() => {
   // Extract verification status from job progress or results
   return job.value?.progress?.verification_status || null;
+});
+
+const progressMessage = computed(() => {
+  return job.value?.progress?.message || null;
+});
+
+const branchName = computed(() => {
+  const results = job.value?.results;
+  if (results && typeof results === 'object') {
+    const prResults = (results as any).pr_results;
+    return prResults?.branch_name || null;
+  }
+  return null;
+});
+
+// Convert plan versions to summary format for sidebar
+const planVersionsSummary = computed(() => {
+  if (!planVersions.value || planVersions.value.length === 0) {
+    return null;
+  }
+  return planVersions.value
+    .filter(pv => pv && pv.version && pv.plan_hash && pv.plan_spec) // Filter invalid entries
+    .map(pv => ({
+      version: pv.version,
+      plan_hash: pv.plan_hash,
+      previous_version_hash: null, // Not available in full plan version
+      generated_by: 'opencode',
+      summary: pv.plan_spec?.summary || 'No summary available',
+    }));
 });
 
 const stageTimestamps = computed(() => {
@@ -288,6 +339,11 @@ function getStageBadgeClass(stage: PipelineStage): string {
 }
 
 async function handleApprove(planHash: string) {
+  if (!planHash || typeof planHash !== 'string' || planHash.trim().length === 0) {
+    uiStore.showError('Invalid plan hash');
+    return;
+  }
+
   try {
     await approvePlan(planHash);
   } catch (err) {
@@ -298,15 +354,58 @@ async function handleApprove(planHash: string) {
 async function handleRevise(data: any) {
   try {
     await revisePlan(data);
+    // On success, the revision form will be hidden automatically when stage changes
+    // The composable handles the state updates
   } catch (err) {
     // Error already handled in composable
+    // Form remains open so user can retry or cancel
   }
 }
 
 function handleCompare(fromVersion: number, toVersion: number) {
+  // Validate version numbers
+  if (typeof fromVersion !== 'number' || typeof toVersion !== 'number' ||
+      fromVersion < 1 || toVersion < 1 || fromVersion === toVersion) {
+    uiStore.showError('Invalid version numbers for comparison');
+    return;
+  }
+
   comparisonFromVersion.value = fromVersion;
   comparisonToVersion.value = toVersion;
   showComparison.value = true;
+}
+
+function handleVersionClick(version: number) {
+  // Validate version number
+  if (typeof version !== 'number' || version < 1) {
+    return;
+  }
+
+  // Could navigate to view specific version, for now just show comparison if there's a previous version
+  const versions = planVersions.value;
+  if (versions && versions.length > 1) {
+    const currentIndex = versions.findIndex(p => p && p.version === version);
+    if (currentIndex > 0 && versions[currentIndex - 1] && versions[currentIndex - 1].version) {
+      handleCompare(versions[currentIndex - 1].version, version);
+    } else if (currentIndex === 0 && versions.length > 1 && versions[1] && versions[1].version) {
+      // If clicking on first version, compare with next version
+      handleCompare(version, versions[1].version);
+    }
+  }
+}
+
+function handleVersionCompareClick(version: number) {
+  // Validate version number
+  if (typeof version !== 'number' || version < 1) {
+    return;
+  }
+
+  if (latestPlan.value && latestPlan.value.version && latestPlan.value.version !== version) {
+    // Compare selected version with latest
+    const fromVersion = version < latestPlan.value.version ? version : latestPlan.value.version;
+    const toVersion = version > latestPlan.value.version ? version : latestPlan.value.version;
+    handleCompare(fromVersion, toVersion);
+  }
 }
 
 function handleViewOldPlan() {
@@ -320,9 +419,11 @@ function handleViewNewPlan() {
 }
 
 async function handleApproveNewPlan() {
-  if (latestPlan.value) {
+  if (latestPlan.value && latestPlan.value.plan_hash) {
     showComparison.value = false;
     await handleApprove(latestPlan.value.plan_hash);
+  } else {
+    uiStore.showError('Cannot approve: plan hash is missing');
   }
 }
 
@@ -335,7 +436,11 @@ async function handleCancel() {
 }
 
 onMounted(() => {
-  startPolling();
+  if (jobId.value) {
+    startPolling();
+  } else {
+    error.value = 'Invalid job ID';
+  }
 });
 
 onUnmounted(() => {

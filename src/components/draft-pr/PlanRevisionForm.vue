@@ -126,33 +126,53 @@ const formData = reactive<RevisePlanRequest>({
   feedback_type: 'general',
 });
 
+// Ensure specific_concerns is always an array
+if (!formData.specific_concerns) {
+  formData.specific_concerns = [];
+}
+
 function addConcern() {
-  formData.specific_concerns?.push('');
+  if (!formData.specific_concerns) {
+    formData.specific_concerns = [];
+  }
+  formData.specific_concerns.push('');
 }
 
 function removeConcern(index: number) {
-  if (formData.specific_concerns) {
+  if (formData.specific_concerns && index >= 0 && index < formData.specific_concerns.length) {
     formData.specific_concerns.splice(index, 1);
   }
 }
 
 async function handleSubmit() {
-  if (!formData.feedback.trim()) {
+  if (!formData.feedback || !formData.feedback.trim()) {
+    return;
+  }
+
+  // Prevent double submission
+  if (isSubmitting.value) {
     return;
   }
 
   isSubmitting.value = true;
   try {
     // Filter out empty concerns
-    const concerns = formData.specific_concerns?.filter(c => c.trim()) || [];
+    const concerns = formData.specific_concerns?.filter(c => c && c.trim().length > 0) || [];
     
     emit('submit', {
-      ...formData,
+      feedback: formData.feedback.trim(),
       specific_concerns: concerns.length > 0 ? concerns : undefined,
       requested_changes: formData.requested_changes?.trim() || undefined,
+      feedback_type: formData.feedback_type || 'general',
     });
-  } finally {
-    isSubmitting.value = false;
+    
+    // Reset form after successful submission (parent will handle API call)
+    // The form will be closed when stage changes to REVISING
+  } catch (err) {
+    console.error('Error submitting revision:', err);
+    isSubmitting.value = false; // Reset on error so user can retry
+    // Error will be handled by parent component
   }
+  // Note: isSubmitting will be reset when form is closed or stage changes
 }
 </script>

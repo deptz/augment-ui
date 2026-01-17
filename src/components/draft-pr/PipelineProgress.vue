@@ -130,6 +130,15 @@ function getStageState(stage: PipelineStage): 'completed' | 'current' | 'pending
   const stageIndex = stages.indexOf(stage);
   const currentIndex = stages.indexOf(props.currentStage);
   
+  // Handle stages not in the main pipeline (e.g., REVISING, CREATED)
+  if (stageIndex === -1 || currentIndex === -1) {
+    // For stages not in pipeline, check if they match current stage
+    if (stage === props.currentStage) {
+      return props.failedStage === stage ? 'failed' : 'current';
+    }
+    return 'pending';
+  }
+  
   if (stageIndex < currentIndex) return 'completed';
   if (stageIndex === currentIndex) return 'current';
   return 'pending';

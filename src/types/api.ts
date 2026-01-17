@@ -639,10 +639,22 @@ export interface PlanVersion {
   created_at: string;
 }
 
+export interface PlanVersionSummary {
+  version: number;
+  plan_hash: string;
+  previous_version_hash?: string | null;
+  generated_by?: string;
+  summary: string;
+}
+
 export interface CreateDraftPRRequest {
   story_key: string;
   repos: Array<{ url: string; branch?: string }>;
-  scope?: { files?: string[] };
+  scope?: {
+    files?: string[];
+    include_paths?: string[];
+    exclude_paths?: string[];
+  };
   additional_context?: string;
   mode: 'normal' | 'yolo';
 }
@@ -673,6 +685,7 @@ export interface DraftPRJobStatus extends JobStatus {
   approved_plan_hash?: string | null;
   workspace_fingerprint?: any;
   artifacts?: Record<string, string>;
+  mode?: 'normal' | 'yolo' | null;
 }
 
 

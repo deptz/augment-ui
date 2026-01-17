@@ -1,7 +1,7 @@
-import { ref, computed, watch, type Ref } from 'vue';
+import { ref, computed, watch, onUnmounted, type Ref } from 'vue';
 import { useJobPolling } from './useJobPolling';
-import { getDraftPRJob, approvePlan, revisePlan } from '../api/endpoints';
-import type { DraftPRJobStatus, PipelineStage, PlanVersion, RevisePlanRequest } from '../types/api';
+import { getDraftPRJob, approvePlan, revisePlan, retryDraftPRJob, getJobProgress } from '../api/endpoints';
+import type { DraftPRJobStatus, PipelineStage, PlanVersion, RevisePlanRequest, RetryJobRequest, ProgressResponse } from '../types/api';
 import { useUIStore } from '../stores/ui';
 
 export function useDraftPRJob(jobId: Ref<string | null>) {
@@ -9,6 +9,9 @@ export function useDraftPRJob(jobId: Ref<string | null>) {
   const draftPRJob = ref<DraftPRJobStatus | null>(null);
   const isApproving = ref(false);
   const isRevising = ref(false);
+  const isRetrying = ref(false);
+  const progress = ref<ProgressResponse | null>(null);
+  const progressPollingInterval = ref<number | null>(null);
 
   // Use the base job polling - we'll handle dynamic intervals by restarting when stage changes
   // Default to 3 seconds, which works well for most stages
@@ -84,6 +87,56 @@ export function useDraftPRJob(jobId: Ref<string | null>) {
     }
   }
 
+  // Refresh progress data
+  async function refreshProgress() {
+    if (!jobId.value || typeof jobId.value !== 'string' || jobId.value.trim().length === 0) {
+      return;
+    }
+
+    try {
+      const progressData = await getJobProgress(jobId.value);
+      progress.value = progressData;
+    } catch (err: any) {
+      console.error('Failed to refresh progress:', err);
+      // Don't set error - progress is optional
+    }
+  }
+
+  // Start progress polling
+  function startProgressPolling() {
+    // Clear existing interval
+    if (progressPollingInterval.value !== null) {
+      clearInterval(progressPollingInterval.value);
+    }
+
+    // Only poll during active stages
+    const activeStages: PipelineStage[] = ['PLANNING', 'APPLYING', 'VERIFYING', 'PACKAGING', 'DRAFTING'];
+    if (!currentStage.value || !activeStages.includes(currentStage.value)) {
+      return;
+    }
+
+    // Initial load
+    refreshProgress();
+
+    // Poll every 2-3 seconds during active stages
+    progressPollingInterval.value = window.setInterval(() => {
+      if (currentStage.value && activeStages.includes(currentStage.value)) {
+        refreshProgress();
+      } else {
+        // Stop polling if stage changed to non-active
+        stopProgressPolling();
+      }
+    }, 2500);
+  }
+
+  // Stop progress polling
+  function stopProgressPolling() {
+    if (progressPollingInterval.value !== null) {
+      clearInterval(progressPollingInterval.value);
+      progressPollingInterval.value = null;
+    }
+  }
+
   // Track if we've already attempted auto-approval to prevent multiple attempts
   const autoApprovalAttempted = ref(false);
 
@@ -132,22 +185,24 @@ export function useDraftPRJob(jobId: Ref<string | null>) {
 
     // Initial load
     await refreshDraftPRJob();
+    await refreshProgress();
 
     // Check for YOLO auto-approval on initial load
     await checkAndAutoApprove();
 
+    // Start progress polling if in active stage
+    if (currentStage.value) {
+      const activeStages: PipelineStage[] = ['PLANNING', 'APPLYING', 'VERIFYING', 'PACKAGING', 'DRAFTING'];
+      if (activeStages.includes(currentStage.value)) {
+        startProgressPolling();
+      }
+    }
+
     // Start base polling
     baseStartPolling();
-    
-    // Watch for stage changes and adjust polling frequency
-    // Note: useJobPolling uses a fixed interval, so we can't change it dynamically
-    // But we can restart polling when stage changes to use a better interval
-    // For now, we'll use the default 3s interval which works reasonably well for all stages
-    // The stage-aware intervals (2s for active, 5s for waiting) would require
-    // modifying useJobPolling to support reactive intervals, which is a larger change
   }
 
-  // Watch for stage changes to trigger auto-approval
+  // Watch for stage changes to trigger auto-approval and progress polling
   watch(currentStage, async (newStage, oldStage) => {
     // When stage changes to WAITING_FOR_APPROVAL, check for auto-approval
     if (newStage === 'WAITING_FOR_APPROVAL' && oldStage !== 'WAITING_FOR_APPROVAL') {
@@ -155,9 +210,18 @@ export function useDraftPRJob(jobId: Ref<string | null>) {
       autoApprovalAttempted.value = false;
       await refreshDraftPRJob();
       await checkAndAutoApprove();
+      stopProgressPolling();
     } else if (newStage !== 'WAITING_FOR_APPROVAL') {
       // Reset flag when leaving WAITING_FOR_APPROVAL stage
       autoApprovalAttempted.value = false;
+    }
+
+    // Start/stop progress polling based on stage
+    const activeStages: PipelineStage[] = ['PLANNING', 'APPLYING', 'VERIFYING', 'PACKAGING', 'DRAFTING'];
+    if (newStage && activeStages.includes(newStage)) {
+      startProgressPolling();
+    } else {
+      stopProgressPolling();
     }
   });
 
@@ -261,6 +325,37 @@ export function useDraftPRJob(jobId: Ref<string | null>) {
     return draftPRJob.value?.error || null;
   });
 
+  // Retry failed job
+  async function retryJob(request: RetryJobRequest = {}) {
+    if (!jobId.value || typeof jobId.value !== 'string' || jobId.value.trim().length === 0) {
+      uiStore.showError('Job ID is required');
+      return;
+    }
+
+    // Prevent duplicate retries
+    if (isRetrying.value) {
+      return;
+    }
+
+    isRetrying.value = true;
+    try {
+      const result = await retryDraftPRJob(jobId.value, request);
+      uiStore.showSuccess(result.message || 'Job retry initiated successfully');
+      
+      // Refresh job status
+      await refreshDraftPRJob();
+      await refresh();
+      
+      return result;
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.detail || err.message || 'Failed to retry job';
+      uiStore.showError(errorMsg);
+      throw err;
+    } finally {
+      isRetrying.value = false;
+    }
+  }
+
   return {
     // Job data
     job: computed(() => draftPRJob.value || baseJob.value),
@@ -280,16 +375,28 @@ export function useDraftPRJob(jobId: Ref<string | null>) {
     isCancelling,
     isApproving,
     isRevising,
+    isRetrying,
 
     // Actions
     startPolling: startDraftPRPolling,
-    stopPolling,
+    stopPolling: () => {
+      stopProgressPolling();
+      stopPolling();
+    },
     cancelJob,
     refresh: async () => {
       await refreshDraftPRJob();
+      await refreshProgress();
       await refresh();
     },
     approvePlan: approvePlanHash,
     revisePlan: revisePlanWithFeedback,
+    retryJob,
+    progress,
   };
+
+  // Cleanup on unmount
+  onUnmounted(() => {
+    stopProgressPolling();
+  });
 }

@@ -11,8 +11,17 @@
       <p class="text-red-600">{{ error }}</p>
     </div>
 
-    <div v-else-if="artifacts.length === 0" class="text-center py-8 text-gray-500">
-      No artifacts available
+    <div v-else-if="artifacts.length === 0" class="text-center py-8">
+      <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+      </svg>
+      <h3 class="mt-2 text-sm font-medium text-gray-900">No artifacts available</h3>
+      <p class="mt-1 text-sm text-gray-500">
+        Artifacts will appear as the job progresses through different stages.
+      </p>
+      <p class="mt-1 text-xs text-gray-400">
+        Common artifacts include: plan versions, git diffs, validation logs, and PR metadata.
+      </p>
     </div>
 
     <div v-else class="space-y-2">

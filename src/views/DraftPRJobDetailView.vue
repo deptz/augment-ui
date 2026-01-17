@@ -6,13 +6,63 @@
         <div>
           <h1 class="text-3xl font-bold text-gray-900">Draft PR Job</h1>
           <div class="mt-2 flex items-center space-x-4 text-sm text-gray-500">
-            <span class="font-mono">{{ jobId }}</span>
+            <div class="flex items-center space-x-1">
+              <span class="font-mono">{{ jobId }}</span>
+              <button
+                @click="copyJobId"
+                class="text-gray-400 hover:text-gray-600 transition-colors"
+                :title="copiedJobId ? 'Copied!' : 'Copy job ID'"
+              >
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path
+                    v-if="copiedJobId"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M5 13l4 4L19 7"
+                  />
+                  <path
+                    v-else
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
+                </svg>
+              </button>
+            </div>
             <span v-if="job?.story_key" class="flex items-center">
               Story: <span class="font-mono ml-1">{{ job.story_key }}</span>
+            </span>
+            <span v-if="progress?.current_step" class="text-gray-600">
+              {{ progress.current_step }}
+            </span>
+            <span v-if="progress?.estimated_time_remaining" class="text-gray-500">
+              ETA: {{ formatETA(progress.estimated_time_remaining) }}
             </span>
           </div>
         </div>
         <div class="flex items-center space-x-3">
+          <button
+            @click="handleRefresh"
+            :disabled="isLoading"
+            class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-300 disabled:cursor-not-allowed"
+            title="Refresh job status"
+          >
+            <svg
+              :class="['w-4 h-4', isLoading ? 'animate-spin' : '']"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
+            </svg>
+          </button>
           <span
             :class="[
               'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium',
@@ -40,6 +90,7 @@
         :current-stage="currentStage"
         :stage-timestamps="stageTimestamps"
         :failed-stage="job?.status === 'failed' ? currentStage : null"
+        :progress-data="progress"
       />
     </div>
 
@@ -47,9 +98,8 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Main Content Area -->
       <div class="lg:col-span-2">
-        <div v-if="isLoading && !job" class="text-center py-12">
-          <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mb-4"></div>
-          <p class="text-gray-500">Loading job details...</p>
+        <div v-if="isLoading && !job" class="py-12">
+          <LoadingSkeleton type="card" :lines="5" />
         </div>
 
         <div v-else-if="error && !job" class="text-center py-12">
@@ -68,9 +118,11 @@
             :error-message="errorMessage"
             :progress-message="progressMessage"
             :branch-name="branchName"
+            :is-retrying="isRetrying"
             @approve="handleApprove"
             @revise="handleRevise"
             @compare="handleCompare"
+            @retry="handleRetry"
           />
 
           <!-- Plan Comparison Modal -->
@@ -138,11 +190,23 @@
                 <span class="text-gray-900">{{ formatDate(job.completed_at) }}</span>
               </div>
             </div>
+            <div v-if="canRetry" class="mt-4">
+              <button
+                @click="handleRetry"
+                :disabled="isRetrying"
+                class="w-full inline-flex justify-center items-center px-3 py-2 border border-indigo-300 text-sm font-medium rounded-md text-indigo-700 bg-white hover:bg-indigo-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-300 disabled:cursor-not-allowed"
+                title="Retry the failed job from the current stage"
+              >
+                <span v-if="isRetrying">Retrying...</span>
+                <span v-else>Retry Job</span>
+              </button>
+            </div>
             <div v-if="canCancel" class="mt-4">
               <button
                 @click="handleCancel"
                 :disabled="isCancelling"
                 class="w-full inline-flex justify-center items-center px-3 py-2 border border-red-300 text-sm font-medium rounded-md text-red-700 bg-white hover:bg-red-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-300 disabled:cursor-not-allowed"
+                title="Cancel the running job"
               >
                 <span v-if="isCancelling">Cancelling...</span>
                 <span v-else>Cancel Job</span>
@@ -163,13 +227,16 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import type { PipelineStage, PlanVersion } from '@/types/api';
 import { useDraftPRJob } from '@/composables/useDraftPRJob';
+import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts';
 import PipelineProgress from '@/components/draft-pr/PipelineProgress.vue';
 import StageView from '@/components/draft-pr/StageView.vue';
 import PlanComparisonView from '@/components/draft-pr/PlanComparisonView.vue';
 import PlanVersionsSidebar from '@/components/draft-pr/PlanVersionsSidebar.vue';
 import ArtifactsViewer from '@/components/draft-pr/ArtifactsViewer.vue';
+import LoadingSkeleton from '@/components/LoadingSkeleton.vue';
 import { formatDate } from '@/utils/dateFormat';
 import { getJobTypeLabel } from '@/utils/jobTypes';
+import { copyToClipboard } from '@/utils/clipboard';
 import { useUIStore } from '@/stores/ui';
 
 const route = useRoute();
@@ -197,20 +264,28 @@ const {
   error,
   isPolling,
   isCancelling,
+  isRetrying,
+  progress,
   startPolling,
   stopPolling,
   cancelJob,
   refresh,
   approvePlan,
   revisePlan,
+  retryJob,
 } = useDraftPRJob(jobId);
 
 const showComparison = ref(false);
 const comparisonFromVersion = ref<number | null>(null);
 const comparisonToVersion = ref<number | null>(null);
+const copiedJobId = ref(false);
 
 const canCancel = computed(() => {
   return job.value && ['started', 'processing'].includes(job.value.status);
+});
+
+const canRetry = computed(() => {
+  return job.value && job.value.status === 'failed' && currentStage.value === 'FAILED';
 });
 
 const verificationStatus = computed(() => {
@@ -338,6 +413,29 @@ function getStageBadgeClass(stage: PipelineStage): string {
   }
 }
 
+function formatETA(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return `${hours}h ${minutes}m`;
+}
+
+async function copyJobId() {
+  if (!jobId.value) return;
+  
+  const success = await copyToClipboard(jobId.value);
+  if (success) {
+    copiedJobId.value = true;
+    uiStore.showSuccess('Job ID copied to clipboard');
+    setTimeout(() => {
+      copiedJobId.value = false;
+    }, 2000);
+  } else {
+    uiStore.showError('Failed to copy job ID');
+  }
+}
+
 async function handleApprove(planHash: string) {
   if (!planHash || typeof planHash !== 'string' || planHash.trim().length === 0) {
     uiStore.showError('Invalid plan hash');
@@ -427,6 +525,23 @@ async function handleApproveNewPlan() {
   }
 }
 
+async function handleRefresh() {
+  try {
+    await refresh();
+    uiStore.showSuccess('Job status refreshed');
+  } catch (err) {
+    // Error already handled in composable
+  }
+}
+
+async function handleRetry() {
+  try {
+    await retryJob({ stage: currentStage.value || undefined });
+  } catch (err) {
+    // Error already handled in composable
+  }
+}
+
 async function handleCancel() {
   try {
     await cancelJob();
@@ -434,6 +549,41 @@ async function handleCancel() {
     // Error already handled in composable
   }
 }
+
+// Keyboard shortcuts
+useKeyboardShortcuts([
+  {
+    key: 'k',
+    ctrl: true,
+    handler: () => {
+      if (latestPlan.value && latestPlan.value.plan_hash && currentStage.value === 'WAITING_FOR_APPROVAL' && !isYoloMode.value) {
+        handleApprove(latestPlan.value.plan_hash);
+      }
+    },
+    description: 'Approve plan (Ctrl+K)',
+  },
+  {
+    key: 'r',
+    ctrl: true,
+    handler: () => {
+      if (currentStage.value === 'WAITING_FOR_APPROVAL' && !isYoloMode.value) {
+        // Trigger revise - this would need to be handled by StageView
+        // For now, we'll just show a message
+        uiStore.showInfo('Press the "Revise Plan" button to revise');
+      }
+    },
+    description: 'Revise plan (Ctrl+R)',
+  },
+  {
+    key: 'Escape',
+    handler: () => {
+      if (showComparison.value) {
+        showComparison.value = false;
+      }
+    },
+    description: 'Close modal (Esc)',
+  },
+]);
 
 onMounted(() => {
   if (jobId.value) {

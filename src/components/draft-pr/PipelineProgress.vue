@@ -2,9 +2,33 @@
   <div class="w-full">
     <div class="flex items-center justify-between mb-4">
       <h3 class="text-lg font-medium text-gray-900">Pipeline Progress</h3>
-      <span v-if="currentStage" class="text-sm text-gray-500">
-        Stage: {{ getStageLabel(currentStage) }}
-      </span>
+      <div class="flex items-center space-x-4">
+        <span v-if="currentStage" class="text-sm text-gray-500">
+          Stage: {{ getStageLabel(currentStage) }}
+        </span>
+        <span v-if="progressData?.percentage !== undefined" class="text-sm font-medium text-gray-900">
+          {{ progressData.percentage }}%
+        </span>
+        <span v-if="etaText" class="text-sm text-gray-500">
+          ETA: {{ etaText }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Progress Bar -->
+    <div v-if="progressData?.percentage !== undefined" class="mb-4">
+      <div class="w-full bg-gray-200 rounded-full h-2.5">
+        <div
+          class="bg-indigo-600 h-2.5 rounded-full transition-all duration-300"
+          :style="{ width: `${progressData.percentage}%` }"
+        ></div>
+      </div>
+      <div v-if="progressData.current_step" class="mt-2 text-sm text-gray-600">
+        {{ progressData.current_step }}
+        <span v-if="progressData.steps_completed !== undefined && progressData.total_steps !== undefined">
+          ({{ progressData.steps_completed }}/{{ progressData.total_steps }})
+        </span>
+      </div>
     </div>
     
     <div class="flex items-center justify-between relative">
@@ -99,19 +123,32 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import type { PipelineStage } from '@/types/api';
+import type { PipelineStage, ProgressResponse } from '@/types/api';
 import { formatDate } from '@/utils/dateFormat';
 
 interface Props {
   currentStage?: PipelineStage | null;
   stageTimestamps?: Record<PipelineStage, string | null>;
   failedStage?: PipelineStage | null;
+  progressData?: ProgressResponse | null;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   currentStage: null,
   stageTimestamps: () => ({}),
   failedStage: null,
+  progressData: null,
+});
+
+// Format ETA
+const etaText = computed(() => {
+  if (!props.progressData?.estimated_time_remaining) return null;
+  const seconds = props.progressData.estimated_time_remaining;
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  return `${hours}h ${minutes}m`;
 });
 
 const stages: PipelineStage[] = [

@@ -688,6 +688,52 @@ export interface DraftPRJobStatus extends JobStatus {
   mode?: 'normal' | 'yolo' | null;
 }
 
+// Retry job request
+export interface RetryJobRequest {
+  stage?: PipelineStage | null;
+  force?: boolean;
+}
+
+// Progress tracking response
+export interface ProgressResponse {
+  job_id: string;
+  stage: PipelineStage;
+  percentage: number;
+  current_step: string;
+  total_steps: number;
+  steps_completed: number;
+  estimated_time_remaining?: number | null;
+  stage_started_at?: string | null;
+  stage_duration?: number | null;
+}
+
+// Story validation response
+export interface StoryValidationResponse {
+  exists: boolean;
+  valid: boolean;
+  story_key: string;
+  summary?: string | null;
+  status?: string | null;
+  error?: string | null;
+}
+
+// Repository validation request
+export interface RepoValidationRequest {
+  url: string;
+  branch?: string | null;
+}
+
+// Repository validation response
+export interface RepoValidationResponse {
+  accessible: boolean;
+  url: string;
+  branch?: string | null;
+  default_branch?: string | null;
+  error?: string | null;
+  workspace?: string | null;
+  repo_slug?: string | null;
+}
+
 
 
 

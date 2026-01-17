@@ -15,16 +15,48 @@
           <label for="story-key" class="block text-sm font-medium text-gray-700">
             Story Key <span class="text-red-500">*</span>
           </label>
-          <input
-            id="story-key"
-            v-model="formData.story_key"
-            type="text"
-            placeholder="e.g., STORY-123"
-            required
-            :disabled="loading"
-            class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed"
-          />
-          <p class="mt-1 text-xs text-gray-500">The JIRA story key to create a Draft PR from</p>
+          <div class="relative">
+            <input
+              id="story-key"
+              v-model="formData.story_key"
+              type="text"
+              placeholder="e.g., STORY-123"
+              required
+              :disabled="loading"
+              @blur="validateStoryKey"
+              @input="debounceStoryValidation"
+              :class="[
+                'mt-1 block w-full border rounded-md shadow-sm py-2 px-3 pr-10 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 disabled:cursor-not-allowed',
+                storyValidation?.valid === false ? 'border-red-300' : storyValidation?.valid === true ? 'border-green-300' : 'border-gray-300'
+              ]"
+            />
+            <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+              <div v-if="isValidatingStory" class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+              <svg
+                v-else-if="storyValidation?.valid === true"
+                class="h-5 w-5 text-green-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+              <svg
+                v-else-if="storyValidation?.valid === false"
+                class="h-5 w-5 text-red-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+          </div>
+          <p v-if="storyValidation?.error" class="mt-1 text-xs text-red-600">{{ storyValidation.error }}</p>
+          <p v-else-if="storyValidation?.valid === true && storyValidation.summary" class="mt-1 text-xs text-green-600">
+            ✓ {{ storyValidation.summary }}
+          </p>
+          <p v-else class="mt-1 text-xs text-gray-500">The JIRA story key to create a Draft PR from</p>
         </div>
 
         <!-- Repository Selector -->
@@ -197,10 +229,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
-import { createDraftPR } from '@/api/endpoints';
-import type { CreateDraftPRRequest, RepoInput } from '@/types/api';
+import { createDraftPR, validateStory } from '@/api/endpoints';
+import type { CreateDraftPRRequest, RepoInput, StoryValidationResponse } from '@/types/api';
 import RepoSelector from '@/components/RepoSelector.vue';
 import LoadingSpinner from '@/components/LoadingSpinner.vue';
 import { useUIStore } from '@/stores/ui';
@@ -224,6 +256,9 @@ const scopeExcludePaths = ref('');
 const loading = ref(false);
 const error = ref<string | null>(null);
 const existingJobId = ref<string | null>(null);
+const storyValidation = ref<StoryValidationResponse | null>(null);
+const isValidatingStory = ref(false);
+const storyValidationTimeout = ref<number | null>(null);
 
 const isFormValid = computed(() => {
   // Check basic requirements
@@ -250,8 +285,48 @@ const isFormValid = computed(() => {
     }
   }
 
+  // Check story validation
+  if (storyValidation.value && storyValidation.value.valid === false) {
+    return false;
+  }
+
   return true;
 });
+
+// Debounced story validation
+function debounceStoryValidation() {
+  if (storyValidationTimeout.value !== null) {
+    clearTimeout(storyValidationTimeout.value);
+  }
+  
+  storyValidationTimeout.value = window.setTimeout(() => {
+    validateStoryKey();
+  }, 500);
+}
+
+// Validate story key
+async function validateStoryKey() {
+  const storyKey = formData.value.story_key?.trim();
+  if (!storyKey || storyKey.length === 0) {
+    storyValidation.value = null;
+    return;
+  }
+
+  isValidatingStory.value = true;
+  try {
+    const result = await validateStory(storyKey);
+    storyValidation.value = result;
+  } catch (err: any) {
+    storyValidation.value = {
+      exists: false,
+      valid: false,
+      story_key: storyKey,
+      error: err.response?.data?.detail || err.message || 'Failed to validate story',
+    };
+  } finally {
+    isValidatingStory.value = false;
+  }
+}
 
 async function handleSubmit() {
   if (!isFormValid.value) {
@@ -356,4 +431,12 @@ async function handleSubmit() {
     loading.value = false;
   }
 }
+
+// Cleanup timeout on unmount
+onUnmounted(() => {
+  if (storyValidationTimeout.value !== null) {
+    clearTimeout(storyValidationTimeout.value);
+    storyValidationTimeout.value = null;
+  }
+});
 </script>

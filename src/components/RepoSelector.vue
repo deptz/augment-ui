@@ -25,17 +25,47 @@
 
         <!-- URL Input -->
         <div class="mb-2">
-          <input
-            :value="getRepoUrl(repo)"
-            @input="updateRepoUrl(index, ($event.target as HTMLInputElement).value)"
-            type="text"
-            placeholder="https://github.com/org/repo.git or git@github.com:org/repo.git"
-            :disabled="disabled"
-            class="block w-full border rounded-md shadow-sm py-1.5 px-2 text-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
-            :class="getUrlError(repo) ? 'border-red-300' : 'border-gray-300'"
-          />
+          <div class="relative">
+            <input
+              :value="getRepoUrl(repo)"
+              @input="updateRepoUrl(index, ($event.target as HTMLInputElement).value)"
+              @blur="validateRepository(index)"
+              type="text"
+              placeholder="https://github.com/org/repo.git or git@github.com:org/repo.git"
+              :disabled="disabled"
+              class="block w-full border rounded-md shadow-sm py-1.5 px-2 pr-10 text-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              :class="getUrlInputClass(repo, index)"
+            />
+            <div class="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+              <div v-if="validatingRepos.has(index)" class="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+              <svg
+                v-else-if="getRepoValidation(index)?.accessible === true"
+                class="h-5 w-5 text-green-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+              </svg>
+              <svg
+                v-else-if="getRepoValidation(index)?.accessible === false"
+                class="h-5 w-5 text-red-500"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </div>
+          </div>
           <p v-if="getUrlError(repo)" class="mt-1 text-xs text-red-600">
             {{ getUrlError(repo) }}
+          </p>
+          <p v-else-if="getRepoValidation(index)?.error" class="mt-1 text-xs text-red-600">
+            {{ getRepoValidation(index)?.error }}
+          </p>
+          <p v-else-if="getRepoValidation(index)?.accessible === true && getRepoValidation(index)?.default_branch" class="mt-1 text-xs text-green-600">
+            ✓ Accessible (default branch: {{ getRepoValidation(index)?.default_branch }})
           </p>
         </div>
 
@@ -98,8 +128,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import type { RepoInput, RepoSpec } from '../types/api';
+import { computed, ref, onUnmounted } from 'vue';
+import { validateRepo } from '../api/endpoints';
+import type { RepoInput, RepoSpec, RepoValidationResponse } from '../types/api';
 
 const props = withDefaults(defineProps<{
   modelValue: RepoInput[];
@@ -118,6 +149,11 @@ const repos = computed({
   get: () => props.modelValue,
   set: (value) => emit('update:modelValue', value),
 });
+
+// Validation state per repo index
+const repoValidations = ref<Map<number, RepoValidationResponse>>(new Map());
+const validatingRepos = ref<Set<number>>(new Set());
+const validationTimeouts = ref<Map<number, number>>(new Map());
 
 // URL validation: must start with https:// or git@
 function isValidUrl(url: string): boolean {
@@ -147,6 +183,74 @@ function getUrlError(repo: RepoInput): string | null {
     return 'URL must start with https:// or git@';
   }
   return null;
+}
+
+function getUrlInputClass(repo: RepoInput, index: number): string {
+  if (getUrlError(repo)) {
+    return 'border-red-300';
+  }
+  const validation = getRepoValidation(index);
+  if (validation?.accessible === true) {
+    return 'border-green-300';
+  }
+  if (validation?.accessible === false) {
+    return 'border-red-300';
+  }
+  return 'border-gray-300';
+}
+
+function getRepoValidation(index: number): RepoValidationResponse | null {
+  return repoValidations.value.get(index) || null;
+}
+
+// Debounced repository validation
+function debounceRepoValidation(index: number) {
+  const existingTimeout = validationTimeouts.value.get(index);
+  if (existingTimeout !== undefined) {
+    clearTimeout(existingTimeout);
+  }
+  
+  const timeout = window.setTimeout(() => {
+    validateRepository(index);
+  }, 500);
+  
+  validationTimeouts.value.set(index, timeout);
+}
+
+// Validate repository
+async function validateRepository(index: number) {
+  const repo = repos.value[index];
+  if (!repo) return;
+  
+  const url = getRepoUrl(repo);
+  if (!url || url.trim().length === 0) {
+    repoValidations.value.delete(index);
+    return;
+  }
+  
+  // Basic format validation first
+  if (!isValidUrl(url)) {
+    repoValidations.value.delete(index);
+    return;
+  }
+  
+  validatingRepos.value.add(index);
+  try {
+    const branch = getRepoBranch(repo);
+    const result = await validateRepo({
+      url: url.trim(),
+      branch: branch?.trim() || null,
+    });
+    repoValidations.value.set(index, result);
+  } catch (err: any) {
+    repoValidations.value.set(index, {
+      accessible: false,
+      url: url,
+      error: err.response?.data?.detail || err.message || 'Failed to validate repository',
+    });
+  } finally {
+    validatingRepos.value.delete(index);
+  }
 }
 
 function getBranchError(repo: RepoInput): string | null {
@@ -180,6 +284,10 @@ function updateRepoUrl(index: number, url: string) {
     newRepos[index] = { url, branch };
   }
   emit('update:modelValue', newRepos);
+  
+  // Clear validation and debounce new validation
+  repoValidations.value.delete(index);
+  debounceRepoValidation(index);
 }
 
 function updateRepoBranch(index: number, branch: string) {
@@ -195,12 +303,30 @@ function updateRepoBranch(index: number, branch: string) {
     newRepos[index] = url;
   }
   emit('update:modelValue', newRepos);
+  
+  // Re-validate if URL exists
+  if (url && url.trim().length > 0) {
+    debounceRepoValidation(index);
+  }
 }
+
+// Cleanup timeouts on unmount
+onUnmounted(() => {
+  validationTimeouts.value.forEach(timeout => {
+    clearTimeout(timeout);
+  });
+  validationTimeouts.value.clear();
+});
 
 // Expose validation for parent components
 defineExpose({
   hasErrors: computed(() => {
-    return repos.value.some(repo => getUrlError(repo) || getBranchError(repo));
+    return repos.value.some((repo, index) => {
+      const urlError = getUrlError(repo);
+      const branchError = getBranchError(repo);
+      const validation = getRepoValidation(index);
+      return urlError || branchError || (validation && validation.accessible === false);
+    });
   }),
   hasEmptyUrls: computed(() => {
     return repos.value.some(repo => !getRepoUrl(repo));

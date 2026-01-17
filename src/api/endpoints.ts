@@ -42,6 +42,11 @@ import type {
   RevisePlanRequest,
   PlanComparison,
   PipelineStage,
+  RetryJobRequest,
+  ProgressResponse,
+  StoryValidationResponse,
+  RepoValidationRequest,
+  RepoValidationResponse,
 } from '../types/api';
 
 // Get available LLM models and providers
@@ -407,11 +412,12 @@ export async function revisePlan(
 export async function comparePlans(
   job_id: string,
   from_version: number,
-  to_version: number
+  to_version: number,
+  format?: 'summary' | 'structured' | 'unified'
 ): Promise<PlanComparison> {
   const response = await apiClient.axios.get<PlanComparison>(
     `/draft-pr/jobs/${job_id}/plans/compare`,
-    { params: { from_version, to_version } }
+    { params: { from_version, to_version, format: format || 'summary' } }
   );
   return response.data;
 }
@@ -438,6 +444,45 @@ export async function getArtifact(
 ): Promise<any> {
   const response = await apiClient.axios.get(
     `/draft-pr/jobs/${job_id}/artifacts/${artifact_type}`
+  );
+  return response.data;
+}
+
+// Retry failed draft PR job
+export async function retryDraftPRJob(
+  job_id: string,
+  request: RetryJobRequest
+): Promise<{ job_id: string; message: string }> {
+  const response = await apiClient.axios.post(
+    `/draft-pr/jobs/${job_id}/retry`,
+    request
+  );
+  return response.data;
+}
+
+// Get job progress
+export async function getJobProgress(job_id: string): Promise<ProgressResponse> {
+  const response = await apiClient.axios.get<ProgressResponse>(
+    `/draft-pr/jobs/${job_id}/progress`
+  );
+  return response.data;
+}
+
+// Validate story
+export async function validateStory(key: string): Promise<StoryValidationResponse> {
+  const response = await apiClient.axios.get<StoryValidationResponse>(
+    `/validate/story/${key}`
+  );
+  return response.data;
+}
+
+// Validate repository
+export async function validateRepo(
+  request: RepoValidationRequest
+): Promise<RepoValidationResponse> {
+  const response = await apiClient.axios.post<RepoValidationResponse>(
+    '/validate/repo',
+    request
   );
   return response.data;
 }

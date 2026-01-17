@@ -119,7 +119,19 @@
       </div>
       <h3 class="text-lg font-medium text-gray-900 mb-2">Pipeline Failed</h3>
       <p v-if="errorMessage" class="text-red-600 mb-4">{{ errorMessage }}</p>
-      <p class="text-gray-500">Check artifacts for more details</p>
+      <p class="text-gray-500 mb-6">Check artifacts for more details</p>
+      <button
+        @click="handleRetry"
+        :disabled="isRetrying"
+        class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+        title="Retry the failed job from the current stage"
+      >
+        <svg v-if="!isRetrying" class="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+        <span v-if="isRetrying">Retrying...</span>
+        <span v-else>Retry Job</span>
+      </button>
     </div>
 
     <!-- Default/CREATED Stage -->
@@ -147,6 +159,7 @@ interface Props {
   errorMessage?: string | null;
   progressMessage?: string | null;
   branchName?: string | null;
+  isRetrying?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -159,12 +172,14 @@ const props = withDefaults(defineProps<Props>(), {
   errorMessage: null,
   progressMessage: null,
   branchName: null,
+  isRetrying: false,
 });
 
 const emit = defineEmits<{
   approve: [planHash: string];
   revise: [data: any];
   compare: [fromVersion: number, toVersion: number];
+  retry: [];
 }>();
 
 const showRevisionForm = ref(false);
@@ -214,5 +229,9 @@ function handleCompare() {
     const toVersion = props.planVersions[props.planVersions.length - 1].version;
     emit('compare', fromVersion, toVersion);
   }
+}
+
+function handleRetry() {
+  emit('retry');
 }
 </script>

@@ -1,6 +1,94 @@
 <template>
   <div class="bg-white shadow-sm rounded-lg p-6">
-    <h3 class="text-lg font-semibold text-gray-900 mb-4">Artifacts</h3>
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-lg font-semibold text-gray-900">Artifacts</h3>
+      <div v-if="metadataSummary.totalCount > 0" class="text-sm text-gray-500">
+        {{ sortedArtifacts.length }} of {{ metadataSummary.totalCount }}
+      </div>
+    </div>
+    
+    <!-- Metadata Summary -->
+    <div v-if="!loading && !error && metadataSummary.totalCount > 0" class="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
+      <div class="flex items-center justify-between text-sm">
+        <div class="flex items-center space-x-4">
+          <div>
+            <span class="text-gray-500">Total Size:</span>
+            <span class="ml-1 font-medium text-gray-900">{{ formatArtifactSize(metadataSummary.totalSize) }}</span>
+          </div>
+          <div>
+            <span class="text-gray-500">Categories:</span>
+            <span class="ml-1 font-medium text-gray-900">{{ metadataSummary.categories.join(', ') }}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Controls: Sort and Filter -->
+    <div v-if="!loading && !error && artifacts.length > 0" class="mb-4 flex items-center justify-between gap-4">
+      <div class="flex items-center space-x-2 flex-1">
+        <!-- Sort By -->
+        <div class="flex items-center space-x-2">
+          <label class="text-sm text-gray-600">Sort:</label>
+          <select
+            v-model="sortBy"
+            class="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="name">Name</option>
+            <option value="size">Size</option>
+            <option value="date">Date</option>
+            <option value="type">Type</option>
+          </select>
+          <button
+            @click="toggleSortOrder"
+            class="p-1 text-gray-500 hover:text-gray-700"
+            :title="sortOrder === 'asc' ? 'Ascending' : 'Descending'"
+          >
+            <svg
+              v-if="sortOrder === 'asc'"
+              class="w-4 h-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+            </svg>
+            <svg
+              v-else
+              class="w-4 h-4"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Filter by Type -->
+        <div class="flex items-center space-x-2">
+          <label class="text-sm text-gray-600">Filter:</label>
+          <select
+            v-model="filterType"
+            @change="handleFilterChange"
+            class="text-sm border border-gray-300 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="">All Types</option>
+            <option value="plan">Plan</option>
+            <option value="diff">Diff</option>
+            <option value="log">Log</option>
+            <option value="metadata">Metadata</option>
+          </select>
+        </div>
+      </div>
+
+        <button
+        v-if="filterType"
+        @click="clearAllFilters"
+        class="text-sm text-indigo-600 hover:text-indigo-800"
+      >
+        Clear Filters
+      </button>
+    </div>
     
     <div v-if="loading" class="text-center py-8">
       <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
@@ -24,14 +112,24 @@
       </p>
     </div>
 
+    <div v-else-if="sortedArtifacts.length === 0" class="text-center py-8">
+      <p class="text-gray-500">No artifacts match the current filters.</p>
+      <button
+        @click="clearAllFilters"
+        class="mt-2 text-sm text-indigo-600 hover:text-indigo-800"
+      >
+        Clear Filters
+      </button>
+    </div>
+
     <div v-else class="space-y-2">
       <div
-        v-for="artifact in artifacts"
+        v-for="artifact in sortedArtifacts"
         :key="artifact"
-        class="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50"
+        class="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
       >
-        <div class="flex items-center space-x-3">
-          <div :class="['p-2 rounded', getArtifactIconClass(artifact)]">
+        <div class="flex items-center space-x-3 flex-1 min-w-0">
+          <div :class="['p-2 rounded flex-shrink-0', getArtifactIconClass(artifact)]">
             <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path
                 v-if="artifact.includes('plan')"
@@ -63,21 +161,48 @@
               />
             </svg>
           </div>
-          <div>
-            <div class="font-medium text-gray-900">{{ formatArtifactName(artifact) }}</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center space-x-2">
+              <div class="font-medium text-gray-900 truncate">{{ formatArtifactName(artifact) }}</div>
+              <span
+                v-if="artifactMetadata[artifact]"
+                class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800"
+                :title="`Size: ${formatArtifactSize(artifactMetadata[artifact].size_bytes)}`"
+              >
+                {{ formatArtifactSize(artifactMetadata[artifact].size_bytes) }}
+              </span>
+            </div>
             <div class="text-sm text-gray-500">{{ getArtifactDescription(artifact) }}</div>
+            <!-- Enhanced Metadata display -->
+            <div v-if="artifactMetadata[artifact]" class="mt-1 flex items-center flex-wrap gap-2 text-xs">
+              <span v-if="artifactMetadata[artifact].content_type" class="inline-flex items-center px-2 py-0.5 rounded font-mono bg-gray-100 text-gray-700">
+                {{ artifactMetadata[artifact].content_type }}
+              </span>
+              <span v-if="artifactMetadata[artifact].created_at" class="text-gray-500">
+                {{ formatArtifactDate(artifactMetadata[artifact].created_at) }}
+              </span>
+              <span v-if="artifactMetadata[artifact].checksum" class="text-gray-400 font-mono" :title="artifactMetadata[artifact].checksum">
+                {{ artifactMetadata[artifact].checksum?.substring(0, 8) }}...
+              </span>
+            </div>
+            <div v-else-if="metadataLoading[artifact]" class="mt-1 text-xs text-gray-400 flex items-center">
+              <div class="inline-block animate-spin rounded-full h-3 w-3 border-b border-gray-400 mr-1"></div>
+              Loading metadata...
+            </div>
           </div>
         </div>
-        <div class="flex space-x-2">
+        <div class="flex space-x-2 flex-shrink-0">
           <button
             @click="viewArtifact(artifact)"
-            class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            :disabled="metadataLoading[artifact]"
+            class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             View
           </button>
           <button
             @click="downloadArtifact(artifact)"
-            class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+            :disabled="metadataLoading[artifact]"
+            class="inline-flex items-center px-3 py-1.5 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Download
           </button>
@@ -147,8 +272,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { listArtifacts, getArtifact } from '@/api/endpoints';
+import { ref, onMounted, computed } from 'vue';
+import { getArtifact } from '@/api/endpoints';
+import { useArtifacts } from '@/composables/useArtifacts';
+import {
+  formatArtifactSize,
+  formatArtifactDate,
+  formatArtifactName,
+  getArtifactDescription,
+  getArtifactIconClass,
+} from '@/utils/artifactHelpers';
 import GitDiffViewer from './GitDiffViewer.vue';
 import ValidationLogsViewer from './ValidationLogsViewer.vue';
 import PRMetadataViewer from './PRMetadataViewer.vue';
@@ -159,40 +292,55 @@ interface Props {
 
 const props = defineProps<Props>();
 
-const artifacts = ref<string[]>([]);
-const loading = ref(true);
-const error = ref<string | null>(null);
+// Use the artifacts composable
+const {
+  artifacts,
+  artifactMetadata,
+  metadataLoading,
+  loading,
+  error,
+  sortedArtifacts,
+  metadataSummary,
+  sortBy,
+  sortOrder,
+  filters,
+  loadArtifacts,
+  setSort,
+  setFilters,
+  clearFilters,
+} = useArtifacts(props.jobId);
+
 const selectedArtifact = ref<string | null>(null);
 const artifactContent = ref<any>(null);
 const artifactLoading = ref(false);
 const artifactError = ref<string | null>(null);
 
+// Local state for UI controls
+const filterType = ref<string>('');
+
 onMounted(async () => {
   await loadArtifacts();
 });
 
-async function loadArtifacts() {
-  if (!props.jobId || typeof props.jobId !== 'string' || props.jobId.trim().length === 0) {
-    error.value = 'Invalid job ID';
-    loading.value = false;
-    return;
-  }
+// No watch needed - v-model updates sortBy directly, and sortedArtifacts computed
+// will automatically react to the change. The toggle button uses setSort which
+// handles the toggle logic properly.
 
-  try {
-    loading.value = true;
-    error.value = null;
-    const response = await listArtifacts(props.jobId);
-    if (response && Array.isArray(response.artifacts)) {
-      artifacts.value = response.artifacts.filter(a => a && typeof a === 'string' && a.trim().length > 0);
-    } else {
-      artifacts.value = [];
-    }
-  } catch (err: any) {
-    error.value = err.response?.data?.detail || err.message || 'Failed to load artifacts';
-    artifacts.value = [];
-  } finally {
-    loading.value = false;
+function toggleSortOrder() {
+  setSort(sortBy.value, sortOrder.value === 'asc' ? 'desc' : 'asc');
+}
+
+function handleFilterChange() {
+  if (filterType.value) {
+    setFilters({ type: filterType.value });
+  } else {
+    clearFilters();
   }
+}
+
+function clearAllFilters() {
+  filterType.value = '';
+  clearFilters();
 }
 
 async function viewArtifact(artifact: string) {
@@ -201,8 +349,16 @@ async function viewArtifact(artifact: string) {
   }
 
   if (!props.jobId || typeof props.jobId !== 'string' || props.jobId.trim().length === 0) {
-    error.value = 'Invalid job ID';
     return;
+  }
+
+  // Check metadata to optimize loading
+  const metadata = artifactMetadata.value[artifact];
+  if (metadata && metadata.size_bytes && metadata.size_bytes > 10 * 1024 * 1024) {
+    // Warn user if artifact is large (>10MB)
+    if (!confirm(`This artifact is ${formatArtifactSize(metadata.size_bytes)}. It may take a while to load. Continue?`)) {
+      return;
+    }
   }
 
   selectedArtifact.value = artifact;
@@ -274,40 +430,7 @@ async function downloadArtifact(artifact: string) {
   }
 }
 
-function formatArtifactName(artifact: string): string {
-  return artifact
-    .split('_')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}
-
-function getArtifactDescription(artifact: string): string {
-  const descriptions: Record<string, string> = {
-    input_spec: 'Input specification for the job',
-    workspace_fingerprint: 'Workspace fingerprint information',
-    plan_v1: 'Plan version 1',
-    plan_v2: 'Plan version 2',
-    approval: 'Plan approval record',
-    git_diff: 'Git diff of changes',
-    validation_logs: 'Validation and test logs',
-    pr_metadata: 'Pull request metadata',
-  };
-  return descriptions[artifact] || 'Artifact data';
-}
-
-
-function getArtifactIconClass(artifact: string): string {
-  if (artifact.includes('plan')) {
-    return 'bg-blue-100 text-blue-600';
-  }
-  if (artifact.includes('diff') || artifact.includes('git')) {
-    return 'bg-green-100 text-green-600';
-  }
-  if (artifact.includes('log')) {
-    return 'bg-yellow-100 text-yellow-600';
-  }
-  return 'bg-gray-100 text-gray-600';
-}
+// Helper functions are now imported from artifactHelpers
 
 function isJsonArtifact(artifact: string): boolean {
   return artifact.includes('plan') || artifact.includes('metadata') || artifact.includes('fingerprint') || artifact.includes('approval');

@@ -26,39 +26,91 @@
 
     <div v-else class="space-y-2">
       <div
-        v-for="plan in planVersions"
+        v-for="(plan, index) in planVersions"
         :key="plan.version"
         :class="[
-          'p-3 border rounded-lg cursor-pointer transition-colors',
+          'p-3 border rounded-lg transition-all',
           isCurrentVersion(plan.version)
-            ? 'border-indigo-500 bg-indigo-50'
-            : 'border-gray-200 hover:bg-gray-50'
+            ? 'border-indigo-500 bg-indigo-50 shadow-sm'
+            : 'border-gray-200 hover:bg-gray-50 hover:border-gray-300 cursor-pointer'
         ]"
         @click="handleVersionClick(plan.version)"
       >
-        <div class="flex items-start justify-between mb-1">
-          <span class="text-sm font-medium text-gray-900">
-            Version {{ plan.version }}
-          </span>
-          <span
-            v-if="isCurrentVersion(plan.version)"
-            class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800"
-          >
-            Current
-          </span>
+        <div class="flex items-start justify-between mb-2">
+          <div class="flex items-center space-x-2 flex-1 min-w-0">
+            <div
+              :class="[
+                'flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold',
+                isCurrentVersion(plan.version)
+                  ? 'bg-indigo-600 text-white'
+                  : isLatestVersion(plan.version)
+                  ? 'bg-green-100 text-green-800'
+                  : 'bg-gray-200 text-gray-700'
+              ]"
+            >
+              {{ plan.version }}
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center space-x-2">
+                <span class="text-sm font-medium text-gray-900">
+                  Version {{ plan.version }}
+                </span>
+                <span
+                  v-if="isCurrentVersion(plan.version)"
+                  class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800"
+                >
+                  Current
+                </span>
+                <span
+                  v-else-if="isLatestVersion(plan.version)"
+                  class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
+                >
+                  Latest
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
-        <p class="text-xs text-gray-600 line-clamp-2 mb-2">{{ plan.summary || 'No summary available' }}</p>
-        <div class="flex items-center justify-between">
-          <span class="font-mono text-xs text-gray-500" :title="plan.plan_hash || ''">
-            {{ shortenHash(plan.plan_hash || '') }}
-          </span>
-          <button
-            v-if="planVersions.length > 1 && !isLatestVersion(plan.version)"
-            @click.stop="handleCompareClick(plan.version)"
-            class="text-xs text-indigo-600 hover:text-indigo-800"
-          >
-            Compare
-          </button>
+        
+        <p class="text-xs text-gray-600 line-clamp-2 mb-2 ml-10">{{ plan.summary || 'No summary available' }}</p>
+        
+        <div class="flex items-center justify-between ml-10">
+          <div class="flex items-center space-x-2">
+            <span class="font-mono text-xs text-gray-500" :title="plan.plan_hash || ''">
+              {{ shortenHash(plan.plan_hash || '') }}
+            </span>
+            <span
+              v-if="index < planVersions.length - 1"
+              class="text-xs text-gray-400"
+              title="Previous version"
+            >
+              ←
+            </span>
+          </div>
+          <div class="flex items-center space-x-2">
+            <button
+              @click.stop="handleViewVersion(plan.version)"
+              class="inline-flex items-center px-2 py-1 text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded transition-colors"
+              title="View full plan details"
+            >
+              <svg class="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              View
+            </button>
+            <button
+              v-if="planVersions.length > 1 && !isLatestVersion(plan.version)"
+              @click.stop="handleCompareClick(plan.version)"
+              class="inline-flex items-center px-2 py-1 text-xs font-medium text-indigo-600 hover:text-indigo-800 hover:bg-indigo-50 rounded transition-colors"
+              title="Compare with latest version"
+            >
+              <svg class="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2" />
+              </svg>
+              Compare
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -86,6 +138,7 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   versionClick: [version: number];
   compareClick: [version: number];
+  viewVersion: [version: number];
 }>();
 
 const planVersions = ref<PlanVersionSummary[]>([]);
@@ -160,5 +213,12 @@ function handleCompareClick(version: number) {
     return;
   }
   emit('compareClick', version);
+}
+
+function handleViewVersion(version: number) {
+  if (typeof version !== 'number' || version < 1) {
+    return;
+  }
+  emit('viewVersion', version);
 }
 </script>

@@ -186,6 +186,18 @@
       </div>
     </div>
 
+    <!-- Bulk Operations Panel (for Draft PR jobs) -->
+    <div v-if="hasDraftPRJobs" class="mb-6">
+      <BulkOperationsPanel
+        v-model:selected-jobs="selectedJobIds"
+        :jobs="draftPRJobs"
+        :default-repos="defaultRepos"
+        :default-scope="defaultScope"
+        :default-additional-context="defaultAdditionalContext"
+        @refresh="loadJobs"
+      />
+    </div>
+
     <!-- Jobs List -->
     <div v-if="loading && jobs.length === 0" class="text-center py-12">
       <LoadingSpinner size="lg" />
@@ -201,17 +213,37 @@
     </div>
 
     <div v-else class="space-y-4">
-      <JobStatusCard
+      <!-- Selection checkbox for each job (only show for draft_pr jobs) -->
+      <div
         v-for="job in jobs"
         :key="job.job_id"
-        :job="job"
-        :is-loading="loading"
-        :is-cancelling="cancellingJobIds.has(job.job_id)"
-        :show-view-details="true"
-        @cancel="handleCancel(job.job_id)"
-        @refresh="loadJobs"
-        @view-results="handleViewResults(job)"
-      />
+        class="flex items-start gap-3"
+      >
+        <div
+          v-if="job.job_type === 'draft_pr'"
+          class="pt-2"
+        >
+          <input
+            :id="`job-select-${job.job_id}`"
+            type="checkbox"
+            :checked="selectedJobIds.includes(job.job_id)"
+            @change="toggleJobSelection(job.job_id)"
+            class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded cursor-pointer"
+            :aria-label="`Select job ${job.job_id}`"
+          />
+        </div>
+        <div :class="job.job_type === 'draft_pr' ? 'flex-1' : 'w-full'">
+          <JobStatusCard
+            :job="job"
+            :is-loading="loading"
+            :is-cancelling="cancellingJobIds.has(job.job_id)"
+            :show-view-details="true"
+            @cancel="handleCancel(job.job_id)"
+            @refresh="loadJobs"
+            @view-results="handleViewResults(job)"
+          />
+        </div>
+      </div>
     </div>
 
     <!-- Job Results Modal -->
@@ -228,10 +260,11 @@ import { ref, onMounted, computed, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUIStore } from '../stores/ui';
 import { listJobs, cancelJob } from '../api/endpoints';
-import type { JobStatus, JobListParams } from '../types/api';
+import type { JobStatus, JobListParams, DraftPRJobStatus } from '../types/api';
 import LoadingSpinner from '../components/LoadingSpinner.vue';
 import JobStatusCard from '../components/JobStatusCard.vue';
 import JobResultsModal from '../components/JobResultsModal.vue';
+import BulkOperationsPanel from '../components/draft-pr/BulkOperationsPanel.vue';
 import { error } from '../utils/logger';
 import { getAllJobTypes } from '../utils/jobTypes';
 
@@ -242,6 +275,7 @@ const loading = ref(false);
 const selectedJob = ref<JobStatus | null>(null);
 const showResultsModal = ref(false);
 const cancellingJobIds = ref<Set<string>>(new Set());
+const selectedJobIds = ref<string[]>([]);
 const filters = ref<JobListParams>({
   status: null,
   job_type: null,
@@ -268,6 +302,42 @@ const hasMore = computed(() => {
   return offset + limit < responseTotal.value;
 });
 const hasPreviousPage = computed(() => (filters.value.offset || 0) > 0);
+
+// Filter draft PR jobs for bulk operations
+const draftPRJobs = computed(() => {
+  return jobs.value.filter(job => job.job_type === 'draft_pr') as DraftPRJobStatus[];
+});
+
+const hasDraftPRJobs = computed(() => draftPRJobs.value.length > 0);
+
+// Default values for bulk create (can be extracted from existing jobs or set manually)
+const defaultRepos = ref<Array<{ url: string; branch?: string }>>([]);
+const defaultScope = ref<{
+  files?: string[];
+  include_paths?: string[];
+  exclude_paths?: string[];
+} | null>(null);
+const defaultAdditionalContext = ref<string>('');
+
+// Extract default values from the most recent draft PR job if available
+watch(draftPRJobs, (jobs) => {
+  if (jobs.length > 0 && defaultRepos.value.length === 0) {
+    // Use the most recent job's configuration as defaults
+    const latestJob = jobs[0] as DraftPRJobStatus;
+    // Note: repos, scope, and additional_context are not directly in JobStatus
+    // They would need to be stored separately or retrieved from job metadata
+    // For now, we'll leave them empty and let users configure in the bulk create modal
+  }
+}, { immediate: true });
+
+function toggleJobSelection(jobId: string) {
+  const index = selectedJobIds.value.indexOf(jobId);
+  if (index > -1) {
+    selectedJobIds.value.splice(index, 1);
+  } else {
+    selectedJobIds.value.push(jobId);
+  }
+}
 
 /**
  * Determine the route path based on job type or results structure

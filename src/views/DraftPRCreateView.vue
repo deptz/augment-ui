@@ -59,6 +59,36 @@
           <p v-else class="mt-1 text-xs text-gray-500">The JIRA story key to create a Draft PR from</p>
         </div>
 
+        <!-- Template Manager -->
+        <div>
+          <button
+            type="button"
+            @click="showTemplateSection = !showTemplateSection"
+            class="flex items-center justify-between w-full text-left"
+          >
+            <label class="block text-sm font-medium text-gray-700">
+              Templates
+            </label>
+            <svg
+              :class="['w-5 h-5 text-gray-500 transition-transform', showTemplateSection ? 'transform rotate-180' : '']"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          
+          <div v-if="showTemplateSection" class="mt-3">
+            <TemplateManager
+              :current-repos="repos"
+              :current-scope="formData.scope"
+              :current-additional-context="formData.additional_context"
+              @template-loaded="handleTemplateLoaded"
+            />
+          </div>
+        </div>
+
         <!-- Repository Selector -->
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">
@@ -232,9 +262,10 @@
 import { ref, computed, watch, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { createDraftPR, validateStory } from '@/api/endpoints';
-import type { CreateDraftPRRequest, RepoInput, StoryValidationResponse } from '@/types/api';
+import type { CreateDraftPRRequest, RepoInput, StoryValidationResponse, TemplateResponse } from '@/types/api';
 import RepoSelector from '@/components/RepoSelector.vue';
 import LoadingSpinner from '@/components/LoadingSpinner.vue';
+import TemplateManager from '@/components/draft-pr/TemplateManager.vue';
 import { useUIStore } from '@/stores/ui';
 
 const router = useRouter();
@@ -251,6 +282,7 @@ const formData = ref<CreateDraftPRRequest>({
 const repos = ref<RepoInput[]>([]);
 const repoSelectorRef = ref<InstanceType<typeof RepoSelector> | null>(null);
 const showScopeSection = ref(false);
+const showTemplateSection = ref(false);
 const scopeIncludePaths = ref('');
 const scopeExcludePaths = ref('');
 const loading = ref(false);
@@ -325,6 +357,24 @@ async function validateStoryKey() {
     };
   } finally {
     isValidatingStory.value = false;
+  }
+}
+
+function handleTemplateLoaded(template: TemplateResponse) {
+  // Load template data into form
+  repos.value = template.repos || [];
+  formData.value.scope = template.scope || undefined;
+  formData.value.additional_context = template.additional_context || '';
+  
+  // Update scope UI fields
+  if (template.scope) {
+    if (template.scope.include_paths && template.scope.include_paths.length > 0) {
+      scopeIncludePaths.value = template.scope.include_paths.join('\n');
+    }
+    if (template.scope.exclude_paths && template.scope.exclude_paths.length > 0) {
+      scopeExcludePaths.value = template.scope.exclude_paths.join('\n');
+    }
+    showScopeSection.value = true;
   }
 }
 

@@ -157,6 +157,18 @@
         </div>
       </div>
 
+      <!-- Plan Version Modal -->
+      <PlanVersionModal
+        :show="showPlanVersionModal"
+        :job-id="jobId || ''"
+        :version="viewingPlanVersion"
+        :plan-versions="planVersionsSummary"
+        :latest-version="latestPlan?.version || null"
+        @close="handleClosePlanVersionModal"
+        @version-change="handleVersionChange"
+        @compare="handleCompareFromModal"
+      />
+
       <!-- Sidebar -->
       <div class="lg:col-span-1">
         <div class="space-y-6">
@@ -169,6 +181,7 @@
             :initial-plan-versions="planVersionsSummary"
             @version-click="handleVersionClick"
             @compare-click="handleVersionCompareClick"
+            @view-version="handleViewVersion"
           />
 
           <!-- Job Status Card -->
@@ -232,6 +245,7 @@ import PipelineProgress from '@/components/draft-pr/PipelineProgress.vue';
 import StageView from '@/components/draft-pr/StageView.vue';
 import PlanComparisonView from '@/components/draft-pr/PlanComparisonView.vue';
 import PlanVersionsSidebar from '@/components/draft-pr/PlanVersionsSidebar.vue';
+import PlanVersionModal from '@/components/draft-pr/PlanVersionModal.vue';
 import ArtifactsViewer from '@/components/draft-pr/ArtifactsViewer.vue';
 import LoadingSkeleton from '@/components/LoadingSkeleton.vue';
 import { formatDate } from '@/utils/dateFormat';
@@ -279,6 +293,8 @@ const showComparison = ref(false);
 const comparisonFromVersion = ref<number | null>(null);
 const comparisonToVersion = ref<number | null>(null);
 const copiedJobId = ref(false);
+const showPlanVersionModal = ref(false);
+const viewingPlanVersion = ref<number | null>(null);
 
 const canCancel = computed(() => {
   return job.value && ['started', 'processing'].includes(job.value.status);
@@ -506,14 +522,51 @@ function handleVersionCompareClick(version: number) {
   }
 }
 
+function handleViewVersion(version: number) {
+  // Validate version number
+  if (typeof version !== 'number' || version < 1) {
+    return;
+  }
+
+  viewingPlanVersion.value = version;
+  showPlanVersionModal.value = true;
+}
+
+function handleVersionChange(version: number) {
+  // Validate version number
+  if (typeof version !== 'number' || version < 1) {
+    return;
+  }
+
+  // Update the viewing version without closing the modal
+  viewingPlanVersion.value = version;
+}
+
+function handleCompareFromModal(fromVersion: number, toVersion: number) {
+  // Close the modal and show comparison
+  showPlanVersionModal.value = false;
+  handleCompare(fromVersion, toVersion);
+}
+
+function handleClosePlanVersionModal() {
+  showPlanVersionModal.value = false;
+  viewingPlanVersion.value = null;
+}
+
 function handleViewOldPlan() {
   showComparison.value = false;
-  // Could navigate to view old plan version
+  // Navigate to view old plan version
+  if (comparisonFromVersion.value) {
+    handleViewVersion(comparisonFromVersion.value);
+  }
 }
 
 function handleViewNewPlan() {
   showComparison.value = false;
-  // Could navigate to view new plan version
+  // Navigate to view new plan version
+  if (comparisonToVersion.value) {
+    handleViewVersion(comparisonToVersion.value);
+  }
 }
 
 async function handleApproveNewPlan() {

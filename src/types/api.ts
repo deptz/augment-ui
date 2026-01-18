@@ -676,6 +676,26 @@ export interface PlanComparison {
   };
   summary: string;
   changed_sections: string[];
+  // Structured format fields (when format=structured)
+  structured_diff?: StructuredDiff;
+  unified_diff?: string; // When format=unified
+}
+
+export interface StructuredDiff {
+  sections: DiffSection[];
+}
+
+export interface DiffSection {
+  section_name: string;
+  changes: DiffChange[];
+}
+
+export interface DiffChange {
+  type: 'added' | 'removed' | 'modified' | 'context';
+  old_value?: string | null;
+  new_value?: string | null;
+  field_path?: string;
+  description?: string;
 }
 
 // Extended JobStatus for draft_pr
@@ -723,6 +743,17 @@ export interface RepoValidationRequest {
   branch?: string | null;
 }
 
+// Artifact metadata
+export interface ArtifactMetadata {
+  artifact_type: string;
+  size_bytes: number;
+  content_type: string;
+  encoding?: string | null;
+  created_at: string;
+  updated_at?: string | null;
+  checksum?: string | null;
+}
+
 // Repository validation response
 export interface RepoValidationResponse {
   accessible: boolean;
@@ -734,9 +765,104 @@ export interface RepoValidationResponse {
   repo_slug?: string | null;
 }
 
+// Template types
+export interface TemplateSummary {
+  template_id: string;
+  name: string;
+  description?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
 
+export interface TemplateResponse extends TemplateSummary {
+  repos: RepoInput[];
+  scope?: {
+    files?: string[];
+    include_paths?: string[];
+    exclude_paths?: string[];
+  } | null;
+  additional_context?: string | null;
+  created_by: string;
+}
 
+export interface TemplateCreateRequest {
+  name: string;
+  description?: string | null;
+  repos: RepoInput[];
+  scope?: {
+    files?: string[];
+    include_paths?: string[];
+    exclude_paths?: string[];
+  } | null;
+  additional_context?: string | null;
+}
 
+export interface TemplateUpdateRequest {
+  name?: string;
+  description?: string | null;
+  repos?: RepoInput[];
+  scope?: {
+    files?: string[];
+    include_paths?: string[];
+    exclude_paths?: string[];
+  } | null;
+  additional_context?: string | null;
+}
+
+// Bulk operation types
+export interface BulkCreateRequest {
+  jobs: CreateDraftPRRequest[];
+  max_concurrent?: number;
+}
+
+export interface BulkApproveRequest {
+  approvals: Array<{
+    job_id: string;
+    plan_hash: string;
+  }>;
+}
+
+export interface BulkResponse {
+  total: number;
+  successful: number;
+  failed: number;
+  results: Array<{
+    index?: number;
+    success: boolean;
+    job_id?: string | null;
+    error?: string | null;
+    [key: string]: any;
+  }>;
+}
+
+// Analytics types
+export interface AnalyticsStats {
+  total_jobs: number;
+  successful_jobs: number;
+  failed_jobs: number;
+  success_rate: number;
+  avg_duration_seconds: number;
+  avg_planning_duration?: number | null;
+  avg_applying_duration?: number | null;
+  avg_verifying_duration?: number | null;
+  common_failure_reasons?: Array<Record<string, any>>;
+  jobs_by_stage?: Record<string, number>;
+}
+
+export interface JobAnalytics {
+  job_id: string;
+  story_key?: string | null;
+  status: string;
+  stage?: string | null;
+  duration_seconds?: number | null;
+  planning_duration?: number | null;
+  applying_duration?: number | null;
+  verifying_duration?: number | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  failure_reason?: string | null;
+  plan_revisions?: number | null;
+}
 
 
 

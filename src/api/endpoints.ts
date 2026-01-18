@@ -47,6 +47,16 @@ import type {
   StoryValidationResponse,
   RepoValidationRequest,
   RepoValidationResponse,
+  ArtifactMetadata,
+  TemplateSummary,
+  TemplateResponse,
+  TemplateCreateRequest,
+  TemplateUpdateRequest,
+  BulkCreateRequest,
+  BulkApproveRequest,
+  BulkResponse,
+  AnalyticsStats,
+  JobAnalytics,
 } from '../types/api';
 
 // Get available LLM models and providers
@@ -448,6 +458,16 @@ export async function getArtifact(
   return response.data;
 }
 
+export async function getArtifactMetadata(
+  job_id: string,
+  artifact_type: string
+): Promise<ArtifactMetadata> {
+  const response = await apiClient.axios.get<ArtifactMetadata>(
+    `/draft-pr/jobs/${job_id}/artifacts/${artifact_type}/metadata`
+  );
+  return response.data;
+}
+
 // Retry failed draft PR job
 export async function retryDraftPRJob(
   job_id: string,
@@ -487,9 +507,131 @@ export async function validateRepo(
   return response.data;
 }
 
+// Template endpoints
+export async function listTemplates(): Promise<TemplateSummary[]> {
+  const response = await apiClient.axios.get<TemplateSummary[]>(
+    '/draft-pr/templates'
+  );
+  return response.data;
+}
 
+export async function getTemplate(template_id: string): Promise<TemplateResponse> {
+  const response = await apiClient.axios.get<TemplateResponse>(
+    `/draft-pr/templates/${template_id}`
+  );
+  return response.data;
+}
 
+export async function createTemplate(
+  request: TemplateCreateRequest
+): Promise<TemplateResponse> {
+  const response = await apiClient.axios.post<TemplateResponse>(
+    '/draft-pr/templates',
+    request
+  );
+  return response.data;
+}
 
+export async function updateTemplate(
+  template_id: string,
+  request: TemplateUpdateRequest
+): Promise<TemplateResponse> {
+  const response = await apiClient.axios.put<TemplateResponse>(
+    `/draft-pr/templates/${template_id}`,
+    request
+  );
+  return response.data;
+}
+
+export async function deleteTemplate(template_id: string): Promise<void> {
+  await apiClient.axios.delete(`/draft-pr/templates/${template_id}`);
+}
+
+// Bulk operation endpoints
+export async function bulkCreateDraftPRs(
+  request: BulkCreateRequest
+): Promise<BulkResponse> {
+  const response = await apiClient.axios.post<BulkResponse>(
+    '/draft-pr/bulk/create',
+    request
+  );
+  return response.data;
+}
+
+export async function bulkApprovePlans(
+  request: BulkApproveRequest
+): Promise<BulkResponse> {
+  const response = await apiClient.axios.post<BulkResponse>(
+    '/draft-pr/jobs/bulk/approve',
+    request
+  );
+  return response.data;
+}
+
+export async function bulkCancelJobs(job_ids: string[]): Promise<BulkResponse> {
+  // Validate input
+  if (!job_ids || job_ids.length === 0) {
+    throw new Error('job_ids array cannot be empty');
+  }
+
+  // Use paramsSerializer to ensure arrays are serialized as ?job_ids=id1&job_ids=id2
+  // This matches FastAPI's expected format for array query parameters
+  const response = await apiClient.axios.post<BulkResponse>(
+    '/draft-pr/jobs/bulk/cancel',
+    null,
+    {
+      params: { job_ids },
+      paramsSerializer: (params) => {
+        // Custom serializer for FastAPI array query parameters
+        // FastAPI expects: ?job_ids=id1&job_ids=id2 (repeated parameter, not brackets)
+        const parts: string[] = [];
+        for (const [key, value] of Object.entries(params)) {
+          if (Array.isArray(value)) {
+            // For arrays, repeat the parameter for each value
+            value.forEach((item) => {
+              if (item !== null && item !== undefined && item !== '') {
+                parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(item))}`);
+              }
+            });
+          } else if (value !== null && value !== undefined) {
+            parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`);
+          }
+        }
+        return parts.join('&');
+      },
+    }
+  );
+  return response.data;
+}
+
+// Analytics endpoints
+export async function getAnalyticsStats(
+  params?: {
+    start_date?: string | null;
+    end_date?: string | null;
+    status?: string | null;
+  }
+): Promise<AnalyticsStats> {
+  const response = await apiClient.axios.get<AnalyticsStats>(
+    '/draft-pr/analytics/stats',
+    { params }
+  );
+  return response.data;
+}
+
+export async function getJobAnalytics(
+  params?: {
+    start_date?: string | null;
+    end_date?: string | null;
+    status?: string | null;
+  }
+): Promise<JobAnalytics[]> {
+  const response = await apiClient.axios.get<JobAnalytics[]>(
+    '/draft-pr/analytics/jobs',
+    { params }
+  );
+  return response.data;
+}
 
 
 

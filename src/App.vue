@@ -85,6 +85,13 @@
                     >
                       Draft PR
                     </router-link>
+                    <router-link
+                      to="/draft-pr/analytics"
+                      @click="showToolsDropdown = false"
+                      class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      Draft PR Analytics
+                    </router-link>
                   </div>
                 </div>
               </div>

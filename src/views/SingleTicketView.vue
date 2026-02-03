@@ -51,7 +51,7 @@
         </div>
 
         <!-- Repository Selector -->
-        <RepoSelector v-model="repos" :disabled="loading" />
+        <RepoSelector v-if="showRepos" v-model="repos" :disabled="loading" />
 
         <!-- Async Mode Option -->
         <div class="flex items-center">
@@ -64,7 +64,7 @@
           />
           <label for="async-mode" class="ml-2 block text-sm text-gray-900" :class="{ 'text-gray-500': repos.length > 0 }">
             Run in background (for long-running operations)
-            <span v-if="repos.length > 0" class="text-xs text-gray-500 ml-1">(required when using repositories)</span>
+            <span v-if="showRepos && repos.length > 0" class="text-xs text-gray-500 ml-1">(required when using repositories)</span>
           </label>
         </div>
 
@@ -222,6 +222,7 @@ import { useJobPolling } from '../composables/useJobPolling';
 import { useJobUrl } from '../composables/useJobUrl';
 import { getJobStatus } from '../api/endpoints';
 import { error } from '../utils/logger';
+import { isTruthyQueryParam } from '../utils/queryToggle';
 
 const route = useRoute();
 const modelsStore = useModelsStore();
@@ -231,6 +232,7 @@ const ticketKey = ref('');
 const additionalContext = ref('');
 const contextInherited = ref(false);
 const repos = ref<RepoInput[]>([]);
+const showRepos = ref(isTruthyQueryParam(route.query.show_repos));
 const asyncMode = ref(true);
 
 // Auto-enable async mode when repos are added
@@ -239,6 +241,10 @@ watch(repos, (newRepos) => {
     asyncMode.value = true;
   }
 }, { deep: true });
+
+if (!showRepos.value) {
+  repos.value = [];
+}
 const loading = ref(false);
 const previewing = ref(false);
 const updating = ref(false);
@@ -354,7 +360,7 @@ async function handleGenerate() {
       llm_model: modelsStore.selectedModel || undefined,
       additional_context: additionalContext.value || undefined,
       async_mode: asyncMode.value,
-      repos: repos.value.length > 0 ? repos.value : undefined,
+      repos: showRepos.value && repos.value.length > 0 ? repos.value : undefined,
     });
 
     // Check if it's a BatchResponse (async mode)
@@ -503,10 +509,6 @@ function handleABTestResult(result: any) {
   uiStore.showInfo('A/B test completed - you can compare the results');
 }
 </script>
-
-
-
-
 
 
 

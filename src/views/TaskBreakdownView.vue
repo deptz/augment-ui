@@ -87,7 +87,7 @@
         </div>
 
         <!-- Repository Selector -->
-        <RepoSelector v-model="repos" :disabled="loading" />
+        <RepoSelector v-if="showRepos" v-model="repos" :disabled="loading" />
 
         <!-- Options -->
         <div class="space-y-3">
@@ -112,7 +112,7 @@
             />
             <label for="async-mode" class="ml-2 block text-sm text-gray-900" :class="{ 'text-gray-500': repos.length > 0 }">
               Run in background (for long-running operations)
-              <span v-if="repos.length > 0" class="text-xs text-gray-500 ml-1">(required when using repositories)</span>
+              <span v-if="showRepos && repos.length > 0" class="text-xs text-gray-500 ml-1">(required when using repositories)</span>
             </label>
           </div>
         </div>
@@ -342,6 +342,7 @@ import RepoSelector from '../components/RepoSelector.vue';
 import { useJobPolling } from '../composables/useJobPolling';
 import { useJobUrl } from '../composables/useJobUrl';
 import { error, sanitizeError } from '../utils/logger';
+import { isTruthyQueryParam } from '../utils/queryToggle';
 import { isAsyncResponse, handleDuplicateJob } from '../utils/jobHelpers';
 
 const route = useRoute();
@@ -356,6 +357,7 @@ const contextInherited = ref(false);
 const contextInheritedFrom = ref('Inherited from previous operation');
 const generateTestCases = ref(false);
 const repos = ref<RepoInput[]>([]);
+const showRepos = ref(isTruthyQueryParam(route.query.show_repos));
 const asyncMode = ref(true);
 
 // Auto-enable async mode when repos are added
@@ -364,6 +366,10 @@ watch(repos, (newRepos) => {
     asyncMode.value = true;
   }
 }, { deep: true });
+
+if (!showRepos.value) {
+  repos.value = [];
+}
 
 const loading = ref(false);
 const response = ref<TaskGenerationResponse | null>(null);
@@ -599,7 +605,7 @@ async function handleGenerate() {
       additional_context: additionalContext.value || undefined,
       async_mode: asyncMode.value,
       generate_test_cases: generateTestCases.value,
-      repos: repos.value.length > 0 ? repos.value : undefined,
+      repos: showRepos.value && repos.value.length > 0 ? repos.value : undefined,
     });
 
     // Check if it's a BatchResponse (async mode)
@@ -957,9 +963,6 @@ function handleViewCreateAllJobResults() {
   }
 }
 </script>
-
-
-
 
 
 
